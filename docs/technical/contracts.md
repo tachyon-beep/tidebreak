@@ -89,7 +89,7 @@ MovementState {
 
 **Owner**: PhysicsResolver
 **Observers**: All navigation and tactical plugins
-**Mutation**: Movement outputs, `ApplyModifier` (max_speed, acceleration for damage effects)
+**Mutation**: `SetThrottle`, `SetHeading`, `SetCourse`, `HelmOrder`, `ApplyModifier` (max_speed, acceleration for damage effects)
 
 ### LayerState
 
@@ -461,6 +461,119 @@ CommLink {
 
 Cross-boundary contracts between the Full Simulation and Combat Arena.
 
+### Battle Supporting Types
+
+Types used by BattlePackage and BattleResult.
+
+```
+Bounds {
+    min_x:      f64
+    min_y:      f64
+    max_x:      f64
+    max_y:      f64
+}
+
+Obstacle {
+    shape:      Shape               # Circle, Polygon
+    position:   Position
+    material:   ObstacleMaterial    # Solid, Soft (sensor interference)
+}
+
+Shape = Circle { radius: f64 }
+      | Polygon { vertices: List<Position> }
+
+ObstacleMaterial = Solid | Soft { intensity: Ratio }
+
+MapZone {
+    area:           Shape
+    position:       Position
+    modifier_type:  ZoneModifier
+    intensity:      Ratio
+}
+
+ZoneModifier = SensorInterference | Hazard | Current | SpeedBonus
+
+CurrentField = Grid { cells: List<List<(f64, f64)>>, cell_size: f64 }
+             | Analytic { base_vector: (f64, f64), variance: f64 }
+
+LayerConfig {
+    surface:    LayerParams
+    submerged:  LayerParams
+    abyssal:    LayerParams?        # Post-MVP
+}
+
+LayerParams {
+    sensor_modifiers:   Map<SensorType, Modifier>
+    speed_modifier:     Modifier
+    visibility:         Ratio
+}
+
+HullParams {
+    mass:           f64             # kg
+    radius:         f64             # m, collision radius
+    max_speed:      f64             # m/s
+    acceleration:   f64             # m/s²
+    turn_rate:      f64             # rad/s
+    armor:          Ratio?          # Damage reduction (P2+)
+}
+
+Capabilities {
+    can_surface:    bool
+    can_submerge:   bool
+    max_depth_m:    f64
+    dive_rate:      f64             # m/s
+    surface_rate:   f64             # m/s
+}
+
+SensorConfig {
+    sensor_type:    SensorType      # Radar, Sonar, Visual, ESM
+    range:          f64             # m
+    arc:            f64?            # rad, null = 360°
+    noise_floor:    f64             # Detection threshold
+    update_rate:    Duration        # Ticks between updates
+}
+
+SensorType = Radar | Sonar | Visual | ESM | Thermal
+
+WeaponConfig {
+    slot:           WeaponSlot
+    weapon_type:    WeaponTypeId
+    range:          f64             # m, max effective range
+    cooldown:       Duration        # Ticks between shots
+    ammunition:     u32             # Starting ammo
+    projectile:     ProjectileParams
+}
+
+ProjectileParams {
+    speed:          f64             # m/s
+    damage:         f64             # HP damage on hit
+    guidance:       GuidanceType    # Unguided, Homing, LeadPursuit
+    blast_radius:   f64?            # m, for area weapons
+}
+
+GuidanceType = Unguided | Homing { turn_rate: f64 } | LeadPursuit { lead_factor: f64 }
+
+ShipState {
+    x:              f64
+    y:              f64
+    heading:        Heading
+    speed:          f64
+    layer:          Layer
+    hp:             f64?            # Tier 0 ships; null for Tier 1/2
+    ammo:           Map<WeaponSlot, u32>
+}
+
+Consumption {
+    ammo_used:      Map<WeaponSlot, u32>
+    fuel_used:      f64
+}
+
+Casualties {
+    killed:         u32
+    wounded:        u32
+}
+```
+
 ### BattlePackage (Input)
 
 Configuration and state for a battle instance.
@@ -494,12 +607,12 @@ FactionContext {
 }
 
 MapDefinition {
-    bounds:         Bounds              # min_x, min_y, max_x, max_y
-    obstacles:      List<Obstacle>      # shape, material
-    zones:          List<Zone>          # area, modifier_type, intensity
-    currents:       CurrentField        # grid or analytic parameters
+    bounds:         Bounds
+    obstacles:      List<Obstacle>
+    zones:          List<MapZone>       # Area effects (hazards, sensor interference)
+    currents:       CurrentField
     weather:        WeatherCondition
-    layers:         LayerConfig         # surface, submerged definitions
+    layers:         LayerConfig
 }
 
 ShipSnapshot {

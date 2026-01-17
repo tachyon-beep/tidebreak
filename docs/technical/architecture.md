@@ -168,6 +168,7 @@ An **Output** is a typed proposal from a plugin. Outputs do not take effect imme
 
 ```
 Output {
+    output_id:  OutputId        # Unique within tick (for deterministic ordering)
     type:       OutputType      # Discriminator for resolution routing
     source_id:  EntityId        # Entity that emitted this
     plugin_id:  PluginId        # Plugin that emitted this
@@ -183,11 +184,20 @@ Output {
 #### Commands (Attempt Actions)
 
 ```
+# Movement
+SetThrottle     { throttle: Ratio }                     # 0.0–1.0 engine power
+SetHeading      { target_heading: Heading }             # Desired heading
+SetCourse       { throttle: Ratio, heading: Heading }   # Combined command
+HelmOrder       { throttle: Ratio, turn_rate: f64 }     # Direct control (DRL)
+
+# Combat
 FireWeapon      { target: EntityId, slot: WeaponSlot, mode: FireMode }
-QueueDecision   { decision_type: DecisionType, params: DecisionParams }
-LaunchCraft     { squadron: EntityId, mission: MissionType }
-AllocateSupplies{ route: RouteId, resource: ResourceType, amount: Quantity }
 LayerTransition { target_layer: Layer }
+LaunchCraft     { squadron: EntityId, mission: MissionType }
+
+# Strategic
+QueueDecision   { decision_type: DecisionType, params: DecisionParams }
+AllocateSupplies{ route: RouteId, resource: ResourceType, amount: Quantity }
 ```
 
 #### Modifiers (State Changes)
