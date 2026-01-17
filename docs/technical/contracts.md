@@ -10,14 +10,40 @@ This document defines the canonical state component schemas for Tidebreak. All c
 |------|-------------|---------------|
 | `EntityId` | Unique entity identifier | u64 |
 | `PersonId` | Stable person identifier (see people.md) | String |
-| `TickNumber` | Simulation tick (context-dependent: strategic=1 day, tactical=1 second) | u64 |
 | `Quantity` | Non-negative amount | f64, >= 0 |
 | `Ratio` | Bounded 0.0-1.0 | f64, clamped |
 | `Modifier` | Multiplicative factor | f64, >= 0 |
-| `Duration` | Tick count (same tick type as containing component) | u64 |
 | `Position` | 2D coordinate | (f64, f64) |
 | `Heading` | Radians, CCW from +X | f64, normalized to [0, 2π) |
-| `Layer` | Strategic state | enum { Surface, Submerged, Abyssal } |
+| `Layer` | Depth layer | enum { Surface, Submerged, Abyssal } |
+
+### Time Model
+
+Tidebreak uses three time scales:
+
+| Type | Real-Time Equivalent | Used In | Serialization |
+|------|---------------------|---------|---------------|
+| `StrategicTick` | 1 day | Campaign layer, governance, economy | u64 |
+| `TacticalTick` | 1 second | Combat arena, cooldowns, DRL observations | u64 |
+| `Substep` | 0.1 seconds (configurable) | Physics integration within arena | f64 |
+
+**Usage rules**:
+- Components in `docs/technical/contracts.md` default to `StrategicTick` unless noted
+- Components used in combat arena (CombatState, WeaponState, SensorState) use `TacticalTick`
+- `BattlePackage.time_step_s` defines the substep duration; tactical tick = 1.0s always
+- Duration fields inherit the tick type of their containing component
+
+**Duration types**:
+
+| Type | Description | Context |
+|------|-------------|---------|
+| `StrategicDuration` | Tick count in strategic ticks | Governance decisions, treaties |
+| `TacticalDuration` | Tick count in tactical ticks | Cooldowns, transitions, combat timers |
+
+**Examples**:
+- `GovernanceState.decision_latency`: `StrategicDuration` (days to make a decision)
+- `WeaponState.ready_at`: `TacticalTick` (when weapon can fire again)
+- `LayerState.transition_end`: `TacticalTick` (when dive/surface completes)
 
 ### Mutation Rules
 
@@ -41,7 +67,7 @@ CombatState {
     heat:           Ratio               # Weapon/system thermal load
     stress:         Ratio               # Crew combat stress
     suppression:    Ratio               # Incoming fire suppression effect
-    cooldowns:      Map<WeaponSlot, TickNumber>  # Per-weapon ready time
+    cooldowns:      Map<WeaponSlot, TacticalTick>  # Per-weapon ready time
 }
 ```
 
@@ -59,7 +85,7 @@ WeaponState {
     weapon_type:    WeaponTypeId
     ammunition:     Quantity
     condition:      Ratio               # Degradation
-    ready_at:       TickNumber          # Next available tick
+    ready_at:       TacticalTick        # Next available tick
     target_lock:    EntityId?           # Current tracking target
 }
 ```
@@ -100,8 +126,8 @@ LayerState {
     current:        Layer
     transitioning:  bool
     target:         Layer?              # If transitioning
-    transition_start: TickNumber?       # When transition began
-    transition_end:   TickNumber?       # When transition completes
+    transition_start: TacticalTick?     # When transition began
+    transition_end:   TacticalTick?     # When transition completes
 }
 ```
 
@@ -153,7 +179,7 @@ Fused contact information maintained by an entity.
 TrackTableState {
     tracks:         Map<TrackId, Track>
     max_tracks:     u32                 # Capacity limit
-    last_fusion:    TickNumber          # When tracks were last fused
+    last_fusion:    TacticalTick        # When tracks were last fused
 }
 
 Track {
@@ -165,7 +191,7 @@ Track {
     quality:        TrackQuality        # Q0-Q3
     classification: Classification      # Unknown, Friendly, Hostile, Neutral
     iff_confidence: Ratio               # How sure of classification
-    age:            TickNumber          # Ticks since last update
+    age:            TacticalTick        # Ticks since last update
     source:         Set<SensorType>     # Contributing sensors
     layer:          Layer?              # Detected layer, null if unknown
 }
@@ -236,8 +262,8 @@ GovernanceState {
     government_type:    GovernmentType
     constitution_id:    ConstitutionId  # Ruleset for decisions
     decision_queue:     List<QueuedDecision>
-    decision_latency:   Duration        # Ticks per decision cycle
-    last_decision:      TickNumber
+    decision_latency:   StrategicDuration   # Days per decision cycle
+    last_decision:      StrategicTick
     succession:         SuccessionRule
     leader:             EntityId?       # Current leader entity
 }
@@ -249,7 +275,7 @@ GovernmentType = Autocracy | Oligarchy | DirectDemocracy |
 QueuedDecision {
     type:           DecisionType
     params:         DecisionParams
-    queued_at:      TickNumber
+    queued_at:      StrategicTick
     sponsor:        EntityId            # Who proposed it
     urgency:        Priority
 }
@@ -375,7 +401,7 @@ Relation {
     trust:          Ratio
     fear:           Ratio
     trade_value:    Quantity            # Economic interdependence
-    last_contact:   TickNumber
+    last_contact:   StrategicTick
 }
 
 Treaty {
@@ -383,7 +409,7 @@ Treaty {
     type:           TreatyType          # Alliance, NonAggression, Trade, etc.
     parties:        Set<EntityId>
     terms:          TreatyTerms
-    expires:        TickNumber?
+    expires:        StrategicTick?
     enforcement:    EnforcementMechanism
 }
 ```
@@ -436,7 +462,7 @@ CommsState {
     links:          Map<EntityId, CommLink>
     bandwidth_used: Quantity
     bandwidth_max:  Quantity
-    latency_base:   Duration            # Minimum message delay
+    latency_base:   TacticalDuration    # Minimum message delay (tactical ticks)
     jamming_out:    Ratio               # Outgoing jamming power
     mesh_connected: bool                # Part of tactical data mesh
 }
@@ -445,9 +471,9 @@ CommLink {
     target:         EntityId
     quality:        Ratio               # Signal quality
     bandwidth:      Quantity            # Available throughput
-    latency:        Duration            # Round-trip ticks
+    latency:        TacticalDuration    # Round-trip ticks
     encrypted:      bool
-    last_contact:   TickNumber
+    last_contact:   TacticalTick
 }
 ```
 

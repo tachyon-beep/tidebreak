@@ -30,7 +30,7 @@ See [architecture.md](architecture.md) for how the arena fits into the larger sy
 
 **Arena**:
 - 2D top-down with fixed timestep
-- Two depth states: `SURFACE` and `SUBMERGED` (+ `TRANSITIONING` between them)
+- Two layers: `SURFACE` and `SUBMERGED` (transitions tracked via `LayerState`)
 - `ABYSSAL` layer is post-MVP
 
 **Ship Archetypes** (two for MVP):
@@ -176,10 +176,12 @@ extras: {}                               // Reserved for future expansion
 x, y: float
 heading: float (radians)
 speed: float
-depth_state: SURFACE | SUBMERGED | TRANSITIONING
+layer: Layer                    # SURFACE | SUBMERGED (see LayerState for transitions)
 hp: float (for Tier 0) or null (use damage_state for Tier 1/2)
 ammo: {weapon_type: count}
 ```
+
+**Note**: `ShipState.layer` reflects the ship's current stable layer. Transition state (timing, target layer) is tracked internally via `LayerState` component (see `contracts.md`). Ships mid-transition have `LayerState.transitioning = true` but `ShipState.layer` reflects their origin layer until transition completes.
 
 **DamageReport** (for Tier 1/2 ships, persists between battles):
 ```

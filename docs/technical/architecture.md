@@ -297,14 +297,31 @@ class Resolver(Protocol):
 
 ### Standard Resolvers
 
+**Core resolvers** (MVP):
+
 | Resolver | Handles | Purpose |
 |----------|---------|---------|
 | `EffectResolver` | `ApplyModifier` | Generic stat changes |
-| `PhysicsResolver` | Movement outputs | Position, velocity, collisions |
+| `PhysicsResolver` | Movement outputs, `LayerTransition` | Position, velocity, collisions, layer changes |
 | `CombatResolver` | `FireWeapon`, `DamageApplied` | Weapon fire and damage propagation |
 | `SensorResolver` | Detection outputs | Track fusion and quality updates |
-| `GovernanceResolver` | `QueueDecision`, transitions | Decision procedures and government changes |
 | `ReservationResolver` | `Reserve` | Resource contention and allocation |
+| `ObjectiveResolver` | `AssignObjective`, progress updates | Mission objective tracking (see missions.md) |
+
+**Strategic resolvers** (P1+):
+
+| Resolver | Handles | Purpose |
+|----------|---------|---------|
+| `GovernanceResolver` | `QueueDecision`, transitions | Decision procedures and government changes |
+| `LogisticsResolver` | Transfer outputs, consumption | Inventory and supply management |
+| `ReadinessResolver` | Repair outputs, maintenance | Ship/platform operational status |
+| `PopulationResolver` | Population events, drift | Demographics and migration |
+| `FactionResolver` | Influence operations | Internal faction dynamics |
+| `DiplomacyResolver` | Diplomatic outputs, treaties | External relations |
+| `EnvironmentResolver` | Weather, time progression | Environmental state updates |
+| `CommsResolver` | Comm outputs, jamming | Communication link management |
+
+**Note**: Component ownership in `contracts.md` specifies which resolver owns each component. This table provides the complete resolver set; MVP focuses on core resolvers.
 
 ### Conflict Resolution Rules
 

@@ -83,14 +83,18 @@ uv run pre-commit install
 uv run pre-commit run --all-files
 ```
 
-### Running the Demo
+### Running the Demo (Planned)
+
+> **Note**: Arena code not yet implemented. These commands will work once `src/tidebreak/arena/` exists.
 
 ```bash
 # Run demo battle (prints JSON result)
 uv run python -m tidebreak.arena.demo
 ```
 
-### DRL Training
+### DRL Training (Planned)
+
+> **Note**: Training scripts not yet implemented. See `docs/requirements/drl.md` for requirements.
 
 ```bash
 # Train PPO agent
@@ -108,25 +112,42 @@ tensorboard --logdir runs/ppo_arena
 
 ## Project Structure
 
+**Current state** (documentation complete, implementation not started):
+
 ```
 tidebreak/
-├── src/tidebreak/           # Source code
+├── src/tidebreak/           # Source code (skeleton only)
+│   └── __init__.py          # Version string
+├── tests/                   # Test suite
+│   └── test_setup.py        # Smoke test
+├── docs/                    # Documentation (complete)
+│   ├── vision/              # Product vision
+│   ├── design/              # Technical design
+│   ├── requirements/        # Functional requirements
+│   ├── technical/           # Formal specs and contracts
+│   └── development/         # Dev guides (you are here)
+├── pyproject.toml           # Package configuration
+└── CLAUDE.md                # AI assistant guidance
+```
+
+**Planned structure** (after MVP implementation):
+
+```
+tidebreak/
+├── src/tidebreak/
 │   ├── arena/               # Combat arena (MVP focus)
 │   │   ├── sim.py           # Physics engine
 │   │   ├── schema.py        # Data contracts
 │   │   ├── gym_env.py       # DRL environment
 │   │   ├── controllers.py   # Scripted AI
 │   │   └── demo.py          # Demo battle
+│   ├── entity/              # Entity framework
+│   ├── plugins/             # Plugin implementations
+│   ├── resolvers/           # Resolver implementations
 │   └── __init__.py
-├── tests/                   # Test suite
+├── tests/
 ├── scripts/                 # Training and utility scripts
-├── docs/                   # Documentation (new structure)
-│   ├── vision/              # Product vision
-│   ├── design/              # Technical design
-│   ├── requirements/        # Functional requirements
-│   └── development/         # Dev guides (you are here)
-├── pyproject.toml           # Package configuration
-└── CLAUDE.md                # AI assistant guidance
+└── ...
 ```
 
 ## Code Standards
