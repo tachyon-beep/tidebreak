@@ -8,7 +8,7 @@ See [architecture.md](architecture.md) for how the arena fits into the larger sy
 
 - **BattlePackage**: Input contract (ships, terrain, weather, teams)
 - **BattleResult**: Output contract (winner, outcomes, events, replay)
-- **LayerState**: SURFACE, SUBMERGED, TRANSITIONING (ABYSSAL post-MVP)
+- **Layer**: SURFACE, SUBMERGED (ABYSSAL post-MVP); transitions tracked via LayerState component
 - **Track**: Fused contact estimate (not ground truth)
 
 ## Goals

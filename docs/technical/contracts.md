@@ -556,7 +556,7 @@ SensorConfig {
     range:          f64             # m
     arc:            f64?            # rad, null = 360°
     noise_floor:    f64             # Detection threshold
-    update_rate:    Duration        # Ticks between updates
+    update_rate:    TacticalDuration  # Ticks between updates
 }
 
 SensorType = Radar | Sonar | Visual | ESM | Thermal
@@ -565,7 +565,7 @@ WeaponConfig {
     slot:           WeaponSlot
     weapon_type:    WeaponTypeId
     range:          f64             # m, max effective range
-    cooldown:       Duration        # Ticks between shots
+    cooldown:       TacticalDuration  # Ticks between shots
     ammunition:     u32             # Starting ammo
     projectile:     ProjectileParams
 }
@@ -699,7 +699,7 @@ TeamOutcome {
 
 ShipOutcome {
     ship_id:        String
-    final_state:    ShipState           # hp, disabled_flags, position, layer
+    final_state:    ShipState           # position, heading, speed, layer, hp, ammo
     consumption:    Consumption         # ammo_used, fuel_used
     crew_casualties: Casualties         # killed, wounded
 }
