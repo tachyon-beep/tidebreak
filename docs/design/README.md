@@ -18,12 +18,14 @@ For newcomers, read in this order:
 7. [governance.md](governance.md) — Governments, legitimacy, political systems
 8. [economy.md](economy.md) — Resources, production, trade routes
 9. [factions.md](factions.md) — Faction framework and AI
-10. [people.md](people.md) — Named individuals, roles, leadership
+10. [missions.md](missions.md) — Mission → objective decomposition (strategy ↔ tactics)
+11. [people.md](people.md) — Named individuals, roles, leadership
 
 ### Environment & Interactions
-11. [weather.md](weather.md) — Weather effects on combat and sensors
-12. [system-interactions.md](system-interactions.md) — How systems cascade together
-13. [sandbox-design.md](sandbox-design.md) — Campaign structure and replayability
+12. [weather.md](weather.md) — Weather effects on combat and sensors
+13. [system-interactions.md](system-interactions.md) — Combat arena cascade chains and loops
+14. [strategic-system-interactions.md](strategic-system-interactions.md) — Strategic layer cascades and combat handoffs
+15. [sandbox-design.md](sandbox-design.md) — Constraint design and replayability
 
 ## Document Index
 
@@ -45,6 +47,7 @@ For newcomers, read in this order:
 | [governance.md](governance.md) | Government types, legitimacy, political capital, decisions | Designed |
 | [economy.md](economy.md) | Resources, production chains, trade routes, supply | Designed |
 | [factions.md](factions.md) | Faction framework, philosophy, disposition, treaties | Designed |
+| [missions.md](missions.md) | Mission → tactical objective decomposition and DRL reward hooks | Designed |
 | [people.md](people.md) | Named individuals, competence, traits, roles, faces | Designed |
 
 ### Environment & Interactions
@@ -52,8 +55,9 @@ For newcomers, read in this order:
 | Document | Scope | Status |
 |----------|-------|--------|
 | [weather.md](weather.md) | Weather state, storms, hazards, tactical effects | Designed |
-| [system-interactions.md](system-interactions.md) | Cascade chains, emergent gameplay, system coupling | Designed |
-| [sandbox-design.md](sandbox-design.md) | Campaign structure, replayability, procedural generation | Designed |
+| [system-interactions.md](system-interactions.md) | Combat arena cascade chains, loops, and coupling | Designed |
+| [strategic-system-interactions.md](strategic-system-interactions.md) | Strategic layer cascades, loops, and combat handoffs | Designed |
+| [sandbox-design.md](sandbox-design.md) | Constraint design, onboarding, replayability | Designed |
 
 ## Design Principles
 

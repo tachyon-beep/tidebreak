@@ -18,7 +18,16 @@ docs/
 │   ├── combat-arena.md
 │   ├── sensors-and-fog.md
 │   ├── damage-and-boarding.md
-│   └── entity-framework.md
+│   ├── entity-framework.md
+│   ├── governance.md
+│   ├── economy.md
+│   ├── factions.md
+│   ├── missions.md
+│   ├── people.md
+│   ├── weather.md
+│   ├── system-interactions.md
+│   ├── strategic-system-interactions.md
+│   └── sandbox-design.md
 │
 ├── technical/        Formal specifications (contracts and invariants)
 │   ├── README.md     How to read specs
@@ -36,9 +45,11 @@ docs/
 │   ├── entity-framework.md
 │   └── cross-cutting.md
 │
-├── decisions/        Why we chose this (ADRs - future)
+├── decisions/        Why we chose this (ADRs)
+│   └── README.md     ADR template and workflow
 │
-├── research/         Ideas and explorations (future)
+├── research/         Research, spikes, explorations
+│   └── README.md     Non-authoritative explorations
 │
 └── development/      How to contribute
     └── setup.md      Development environment
@@ -55,6 +66,8 @@ docs/
 - [development/setup.md](development/setup.md) — Environment setup
 - [requirements/README.md](requirements/README.md) — What to build
 - [technical/architecture.md](technical/architecture.md) — Entity-Plugin-Resolver spec
+- [decisions/README.md](decisions/README.md) — ADRs (why we chose things)
+- [research/README.md](research/README.md) — Explorations and spikes
 
 ## Document Types
 

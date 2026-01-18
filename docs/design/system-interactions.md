@@ -374,6 +374,7 @@ Systems should be implemented in dependency order:
 ## Related Documents
 
 - [Sandbox Design](sandbox-design.md) — How constraints create meaningful choices
+- [Strategic System Interactions](strategic-system-interactions.md) — Strategic layer cascades and combat handoffs
 - [Sensors and Fog](sensors-and-fog.md) — Information warfare details
 - [Layers and Terrain](layers-and-terrain.md) — Depth layer mechanics
 - [Damage and Boarding](damage-and-boarding.md) — Combat resolution systems
