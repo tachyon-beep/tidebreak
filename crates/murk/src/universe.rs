@@ -153,6 +153,21 @@ impl Universe {
         self.octree.config().bounds
     }
 
+    /// Get read access to the octree (for hashing and advanced queries).
+    #[must_use]
+    pub fn octree(&self) -> &Octree {
+        &self.octree
+    }
+
+    /// Compute a deterministic hash of the current state.
+    ///
+    /// Used for verifying determinism: identical inputs should produce identical hashes.
+    /// See ADR-0003 for determinism strategy.
+    #[must_use]
+    pub fn state_hash(&self) -> u64 {
+        crate::hash::hash_universe(self)
+    }
+
     /// Get field configuration.
     #[must_use]
     pub fn field_config(&self, field: Field) -> &FieldConfig {
@@ -366,5 +381,23 @@ mod tests {
         let after_reset: f64 = universe.rng_mut().unwrap().gen();
 
         assert_eq!(initial, after_reset);
+    }
+
+    #[test]
+    fn test_universe_state_hash() {
+        let config = UniverseConfig::with_bounds(100.0, 100.0, 50.0);
+        let mut universe = Universe::new_with_seed(config.clone(), 42);
+
+        universe.stamp(&Stamp::explosion(Vec3::ZERO, 10.0, 1.0));
+        let hash1 = universe.state_hash();
+
+        let mut universe2 = Universe::new_with_seed(config, 42);
+        universe2.stamp(&Stamp::explosion(Vec3::ZERO, 10.0, 1.0));
+        let hash2 = universe2.state_hash();
+
+        assert_eq!(
+            hash1, hash2,
+            "Identical operations should produce identical hashes"
+        );
     }
 }
