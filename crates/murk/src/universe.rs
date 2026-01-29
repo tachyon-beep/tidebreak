@@ -283,7 +283,6 @@ impl Default for Universe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stamp::{BlendOp, FieldMod, StampShape};
 
     #[test]
     fn test_universe_creation() {
@@ -335,5 +334,37 @@ mod tests {
         let config = UniverseConfig::with_bounds(100.0, 100.0, 50.0);
         let universe = Universe::new_with_seed(config, 42);
         assert_eq!(universe.seed(), Some(42));
+    }
+
+    #[test]
+    fn test_seeded_rng_determinism() {
+        use rand::Rng;
+
+        let config = UniverseConfig::with_bounds(100.0, 100.0, 50.0);
+        let mut u1 = Universe::new_with_seed(config.clone(), 42);
+        let mut u2 = Universe::new_with_seed(config, 42);
+
+        // Both should produce identical sequences
+        let v1: f64 = u1.rng_mut().unwrap().gen();
+        let v2: f64 = u2.rng_mut().unwrap().gen();
+        assert_eq!(v1, v2);
+    }
+
+    #[test]
+    fn test_reset_restores_rng() {
+        use rand::Rng;
+
+        let config = UniverseConfig::with_bounds(100.0, 100.0, 50.0);
+        let mut universe = Universe::new_with_seed(config, 42);
+
+        // Generate some values
+        let initial: f64 = universe.rng_mut().unwrap().gen();
+        let _: f64 = universe.rng_mut().unwrap().gen(); // Advance state
+
+        // Reset should restore RNG
+        universe.reset();
+        let after_reset: f64 = universe.rng_mut().unwrap().gen();
+
+        assert_eq!(initial, after_reset);
     }
 }
