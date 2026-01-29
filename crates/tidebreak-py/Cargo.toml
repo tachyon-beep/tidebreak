@@ -1,0 +1,19 @@
+[package]
+name = "tidebreak-py"
+description = "Python bindings for Tidebreak"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "_tidebreak"
+crate-type = ["cdylib"]
+
+[dependencies]
+murk = { workspace = true }
+tidebreak-core = { workspace = true }
+pyo3 = { workspace = true }
+numpy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+glam = { workspace = true }

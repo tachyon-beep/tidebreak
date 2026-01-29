@@ -480,7 +480,7 @@ fn str_to_field(s: &str) -> murk::Field {
 
 /// Python module definition.
 #[pymodule]
-fn tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyUniverse>()?;
     m.add_class::<PyPointResult>()?;
     m.add_class::<PyQueryResult>()?;
