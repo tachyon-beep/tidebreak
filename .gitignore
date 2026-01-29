@@ -3,11 +3,18 @@
 venv/
 .env/
 
+# Rust
+target/
+Cargo.lock
+*.rlib
+*.rmeta
+
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.so
 .Python
 
 # Testing
