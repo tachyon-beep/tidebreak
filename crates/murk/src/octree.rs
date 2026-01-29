@@ -343,6 +343,40 @@ impl Octree {
         Some(result.values)
     }
 
+    /// Collect all leaf nodes for propagation traversal.
+    ///
+    /// Returns all leaf nodes as (center_position, values) pairs.
+    /// Uses deterministic depth-first, octant-order traversal.
+    /// Empty nodes are skipped (they don't contribute to propagation).
+    #[must_use]
+    pub fn collect_leaves(&self) -> Vec<(Vec3, FieldValues)> {
+        let mut leaves = Vec::new();
+        self.collect_leaves_recursive(&self.root, &mut leaves);
+        leaves
+    }
+
+    /// Recursive helper for collecting leaf nodes.
+    ///
+    /// Traverses the tree in deterministic depth-first, octant-order.
+    fn collect_leaves_recursive(&self, node: &OctreeNode, leaves: &mut Vec<(Vec3, FieldValues)>) {
+        match &node.state {
+            NodeState::Empty => {
+                // Skip empty nodes - they don't contribute to propagation
+            }
+            NodeState::Leaf { values } => {
+                // Add this leaf to the collection
+                let center = node.bounds.center();
+                leaves.push((center, *values));
+            }
+            NodeState::Internal { children, .. } => {
+                // Recurse into children in octant order (0..7) for determinism
+                for child in children.iter().flatten() {
+                    self.collect_leaves_recursive(child, leaves);
+                }
+            }
+        }
+    }
+
     /// Set a single point value (useful for initialization).
     pub fn set_point(&mut self, position: Vec3, values: FieldValues) {
         if !self.config.bounds.contains(position) {
@@ -606,5 +640,104 @@ mod tests {
         assert!(xy.contains(&Direction::NegY));
         assert!(!xy.contains(&Direction::PosZ));
         assert!(!xy.contains(&Direction::NegZ));
+    }
+
+    // ===== Leaf Collection Tests =====
+
+    #[test]
+    fn test_collect_leaves() {
+        // Create an octree and add some leaf nodes
+        let mut octree = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+
+        // Set values at a few positions to create leaf nodes
+        let mut values_a = FieldValues::new();
+        values_a.set(Field::Temperature, 100.0);
+        octree.set_point(Vec3::new(-25.0, -25.0, 0.0), values_a);
+
+        let mut values_b = FieldValues::new();
+        values_b.set(Field::Temperature, 200.0);
+        octree.set_point(Vec3::new(25.0, 25.0, 0.0), values_b);
+
+        // Collect leaves
+        let leaves = octree.collect_leaves();
+
+        // Should have at least 2 leaves with non-default temperature values
+        assert!(!leaves.is_empty(), "Should have collected some leaves");
+
+        // Check that we got leaves with the expected temperature values
+        let temps: Vec<f32> = leaves
+            .iter()
+            .map(|(_, values)| values.get(Field::Temperature))
+            .filter(|&t| t > 0.0)
+            .collect();
+
+        assert!(
+            temps.contains(&100.0) || temps.contains(&200.0),
+            "Should contain at least one of our set temperature values"
+        );
+    }
+
+    #[test]
+    fn test_collect_leaves_empty_octree() {
+        // Create an empty octree
+        let octree = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+
+        // Collect leaves - should return empty vec
+        let leaves = octree.collect_leaves();
+
+        assert!(
+            leaves.is_empty(),
+            "Empty octree should return empty leaf collection"
+        );
+    }
+
+    #[test]
+    fn test_collect_leaves_deterministic() {
+        // Create two identical octrees
+        let mut octree1 = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+        let mut octree2 = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+
+        // Add the same values in the same order
+        let positions = [
+            Vec3::new(-25.0, -25.0, 0.0),
+            Vec3::new(25.0, 25.0, 0.0),
+            Vec3::new(-25.0, 25.0, 0.0),
+            Vec3::new(25.0, -25.0, 0.0),
+        ];
+
+        for (i, pos) in positions.iter().enumerate() {
+            let mut values = FieldValues::new();
+            values.set(Field::Temperature, (i as f32 + 1.0) * 100.0);
+            octree1.set_point(*pos, values);
+            octree2.set_point(*pos, values);
+        }
+
+        // Collect leaves from both
+        let leaves1 = octree1.collect_leaves();
+        let leaves2 = octree2.collect_leaves();
+
+        // Should have same number of leaves
+        assert_eq!(
+            leaves1.len(),
+            leaves2.len(),
+            "Both octrees should have same number of leaves"
+        );
+
+        // Should be in the same order (deterministic traversal)
+        for (i, ((pos1, values1), (pos2, values2))) in
+            leaves1.iter().zip(leaves2.iter()).enumerate()
+        {
+            assert_eq!(
+                pos1, pos2,
+                "Leaf positions should match at index {}",
+                i
+            );
+            assert_eq!(
+                values1.as_slice(),
+                values2.as_slice(),
+                "Leaf values should match at index {}",
+                i
+            );
+        }
     }
 }
