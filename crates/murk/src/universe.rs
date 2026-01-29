@@ -400,4 +400,29 @@ mod tests {
             "Identical operations should produce identical hashes"
         );
     }
+
+    #[test]
+    fn test_determinism_same_platform() {
+        let config = UniverseConfig::with_bounds(100.0, 100.0, 50.0);
+
+        // Run 1
+        let mut universe1 = Universe::new_with_seed(config.clone(), 12345);
+        universe1.stamp(&Stamp::explosion(Vec3::new(10.0, 20.0, 5.0), 15.0, 0.8));
+        universe1.stamp(&Stamp::fire(Vec3::new(-5.0, 0.0, 0.0), 8.0, 0.5));
+        for _ in 0..10 {
+            universe1.step(0.1);
+        }
+        let hash1 = universe1.state_hash();
+
+        // Run 2 (identical operations)
+        let mut universe2 = Universe::new_with_seed(config, 12345);
+        universe2.stamp(&Stamp::explosion(Vec3::new(10.0, 20.0, 5.0), 15.0, 0.8));
+        universe2.stamp(&Stamp::fire(Vec3::new(-5.0, 0.0, 0.0), 8.0, 0.5));
+        for _ in 0..10 {
+            universe2.step(0.1);
+        }
+        let hash2 = universe2.state_hash();
+
+        assert_eq!(hash1, hash2, "Same seed + same operations must produce identical state (ADR-0003)");
+    }
 }
