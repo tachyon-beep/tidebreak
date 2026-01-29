@@ -1,0 +1,339 @@
+//! Universe: top-level API for Murk.
+//!
+//! The Universe wraps the octree and provides a convenient high-level interface
+//! for common operations.
+
+use glam::Vec3;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
+
+use crate::field::{Field, FieldConfig, FieldValues};
+use crate::octree::{Octree, OctreeConfig, OctreeStats};
+use crate::query::{
+    FoveatedQuery, FoveatedResult, PointQuery, PointResult, QueryResolution, QueryResult,
+    VolumeQuery,
+};
+use crate::stamp::Stamp;
+// FieldStats imported via query module
+use crate::Bounds;
+
+/// Configuration for a Universe.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UniverseConfig {
+    /// World bounds
+    pub bounds: Bounds,
+    /// Base resolution (cell size at maximum depth)
+    pub base_resolution: f32,
+    /// Variance threshold for merging cells
+    pub merge_threshold: f32,
+    /// Variance threshold for splitting cells
+    pub split_threshold: f32,
+    /// Field configurations (optional overrides)
+    pub field_configs: Vec<FieldConfig>,
+}
+
+impl Default for UniverseConfig {
+    fn default() -> Self {
+        Self {
+            bounds: Bounds::new(1024.0, 1024.0, 256.0),
+            base_resolution: 1.0,
+            merge_threshold: 0.02,
+            split_threshold: 0.1,
+            field_configs: Vec::new(),
+        }
+    }
+}
+
+impl UniverseConfig {
+    /// Create a new config with specified bounds.
+    #[must_use]
+    pub fn with_bounds(width: f32, height: f32, depth: f32) -> Self {
+        Self {
+            bounds: Bounds::new(width, height, depth),
+            ..Default::default()
+        }
+    }
+}
+
+/// The Universe: top-level container for spatial fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Universe {
+    /// Octree storage
+    octree: Octree,
+    /// Field configurations
+    field_configs: [FieldConfig; Field::COUNT],
+    /// Current simulation tick
+    tick: u64,
+    /// Simulation time in seconds
+    time: f64,
+    /// Deterministic RNG (optional, skipped in serialization)
+    #[serde(skip)]
+    rng: Option<ChaCha8Rng>,
+    /// Original seed for replay
+    seed: Option<u64>,
+}
+
+impl Universe {
+    /// Create a new Universe.
+    #[must_use]
+    pub fn new(config: UniverseConfig) -> Self {
+        let max_depth = OctreeConfig::calculate_max_depth(&config.bounds, config.base_resolution);
+
+        let octree = Octree::new(OctreeConfig {
+            bounds: config.bounds,
+            base_resolution: config.base_resolution,
+            max_depth,
+            merge_threshold: config.merge_threshold,
+            split_threshold: config.split_threshold,
+        });
+
+        // Initialize field configs with defaults, then apply overrides
+        let mut field_configs: [FieldConfig; Field::COUNT] =
+            std::array::from_fn(|i| FieldConfig::default_for(Field::all()[i]));
+
+        for override_config in &config.field_configs {
+            field_configs[override_config.field.index()] = override_config.clone();
+        }
+
+        Self {
+            octree,
+            field_configs,
+            tick: 0,
+            time: 0.0,
+            rng: None,
+            seed: None,
+        }
+    }
+
+    /// Create a new Universe with deterministic seeded RNG.
+    #[must_use]
+    pub fn new_with_seed(config: UniverseConfig, seed: u64) -> Self {
+        let mut universe = Self::new(config);
+        universe.rng = Some(ChaCha8Rng::seed_from_u64(seed));
+        universe.seed = Some(seed);
+        universe
+    }
+
+    /// Get the seed used to create this universe.
+    #[must_use]
+    pub fn seed(&self) -> Option<u64> {
+        self.seed
+    }
+
+    /// Get mutable access to RNG (for internal use).
+    ///
+    /// This will be used by propagation and stochastic operations.
+    #[allow(dead_code)]
+    pub(crate) fn rng_mut(&mut self) -> Option<&mut ChaCha8Rng> {
+        self.rng.as_mut()
+    }
+
+    /// Get the current tick.
+    #[must_use]
+    pub fn tick(&self) -> u64 {
+        self.tick
+    }
+
+    /// Get the current simulation time.
+    #[must_use]
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+
+    /// Get octree statistics.
+    #[must_use]
+    pub fn stats(&self) -> OctreeStats {
+        self.octree.stats()
+    }
+
+    /// Get the world bounds.
+    #[must_use]
+    pub fn bounds(&self) -> Bounds {
+        self.octree.config().bounds
+    }
+
+    /// Get field configuration.
+    #[must_use]
+    pub fn field_config(&self, field: Field) -> &FieldConfig {
+        &self.field_configs[field.index()]
+    }
+
+    // ========================================================================
+    // Mutation
+    // ========================================================================
+
+    /// Apply a stamp to the universe.
+    pub fn stamp(&mut self, stamp: &Stamp) {
+        self.octree.apply_stamp(stamp);
+    }
+
+    /// Apply multiple stamps.
+    pub fn stamp_many(&mut self, stamps: &[Stamp]) {
+        for stamp in stamps {
+            self.octree.apply_stamp(stamp);
+        }
+    }
+
+    /// Set field values at a point.
+    pub fn set_point(&mut self, position: Vec3, values: FieldValues) {
+        self.octree.set_point(position, values);
+    }
+
+    // ========================================================================
+    // Queries
+    // ========================================================================
+
+    /// Query a single point.
+    #[must_use]
+    pub fn query_point(&self, position: Vec3) -> PointResult {
+        self.octree.query_point(&PointQuery::new(position))
+    }
+
+    /// Query a volume.
+    #[must_use]
+    pub fn query_volume(&self, center: Vec3, radius: f32, resolution: QueryResolution) -> QueryResult {
+        self.octree.query_volume(
+            &VolumeQuery::new(center, radius).with_resolution(resolution),
+        )
+    }
+
+    /// Get a foveated observation for an agent.
+    #[must_use]
+    pub fn observe_foveated(&self, query: &FoveatedQuery) -> FoveatedResult {
+        let mut shell_stats = Vec::with_capacity(query.shells.len());
+        let mut total_nodes_visited = 0;
+
+        for shell in &query.shells {
+            let mut sector_stats = Vec::with_capacity(shell.sectors as usize);
+
+            // For each sector in this shell
+            for sector_idx in 0..shell.sectors {
+                // Calculate sector center
+                let angle = (sector_idx as f32 / shell.sectors as f32) * std::f32::consts::TAU;
+                let mid_radius = (shell.radius_inner + shell.radius_outer) / 2.0;
+
+                // Rotate by heading
+                let heading_angle = query.heading.y.atan2(query.heading.x);
+                let sector_angle = heading_angle + angle;
+
+                let sector_center = query.position
+                    + Vec3::new(sector_angle.cos(), sector_angle.sin(), 0.0) * mid_radius;
+
+                let sector_radius = (shell.radius_outer - shell.radius_inner) / 2.0;
+
+                // Query this sector
+                let result = self.octree.query_volume(
+                    &VolumeQuery::new(sector_center, sector_radius)
+                        .with_resolution(shell.resolution),
+                );
+
+                total_nodes_visited += result.nodes_visited;
+                sector_stats.push(result.stats);
+            }
+
+            shell_stats.push(sector_stats);
+        }
+
+        FoveatedResult {
+            shell_stats,
+            nodes_visited: total_nodes_visited,
+        }
+    }
+
+    // ========================================================================
+    // Simulation
+    // ========================================================================
+
+    /// Advance simulation by one tick.
+    ///
+    /// This propagates fields (diffusion, decay) according to their configurations.
+    pub fn step(&mut self, dt: f64) {
+        // TODO: Implement field propagation
+        // For each field with propagation enabled:
+        // - Diffusion: spread values to neighbors
+        // - Decay: reduce values toward default
+
+        self.tick += 1;
+        self.time += dt;
+    }
+
+    /// Reset the universe to initial state.
+    ///
+    /// If the universe was created with a seed, the RNG is re-seeded
+    /// to ensure deterministic replay.
+    pub fn reset(&mut self) {
+        let config = self.octree.config().clone();
+        self.octree = Octree::new(config);
+        self.tick = 0;
+        self.time = 0.0;
+        // Re-seed RNG if a seed exists (for deterministic replay)
+        if let Some(seed) = self.seed {
+            self.rng = Some(ChaCha8Rng::seed_from_u64(seed));
+        }
+    }
+}
+
+impl Default for Universe {
+    fn default() -> Self {
+        Self::new(UniverseConfig::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stamp::{BlendOp, FieldMod, StampShape};
+
+    #[test]
+    fn test_universe_creation() {
+        let universe = Universe::new(UniverseConfig::with_bounds(100.0, 100.0, 50.0));
+        assert_eq!(universe.tick(), 0);
+        assert_eq!(universe.time(), 0.0);
+    }
+
+    #[test]
+    fn test_universe_stamp_and_query() {
+        let mut universe = Universe::new(UniverseConfig::with_bounds(100.0, 100.0, 50.0));
+
+        // Apply an explosion
+        universe.stamp(&Stamp::explosion(Vec3::ZERO, 10.0, 1.0));
+
+        // Query the affected area
+        let result = universe.query_volume(Vec3::ZERO, 15.0, QueryResolution::Fine);
+        assert!(result.mean(Field::Temperature) > 293.0); // Above default
+        assert!(result.mean(Field::Noise) > 0.0);
+    }
+
+    #[test]
+    fn test_universe_foveated_observation() {
+        let mut universe = Universe::new(UniverseConfig::with_bounds(200.0, 200.0, 50.0));
+
+        // Create a heat source
+        universe.stamp(&Stamp::fire(Vec3::new(50.0, 0.0, 0.0), 10.0, 1.0));
+
+        // Get foveated observation from origin looking toward heat
+        let query = FoveatedQuery::new(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0));
+        let result = universe.observe_foveated(&query);
+
+        // Should have 3 shells (default config)
+        assert_eq!(result.shell_stats.len(), 3);
+    }
+
+    #[test]
+    fn test_universe_step() {
+        let mut universe = Universe::default();
+        assert_eq!(universe.tick(), 0);
+
+        universe.step(0.1);
+        assert_eq!(universe.tick(), 1);
+        assert!((universe.time() - 0.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_universe_seeded_creation() {
+        let config = UniverseConfig::with_bounds(100.0, 100.0, 50.0);
+        let universe = Universe::new_with_seed(config, 42);
+        assert_eq!(universe.seed(), Some(42));
+    }
+}
