@@ -234,9 +234,38 @@ impl PyUniverse {
         });
     }
 
-    /// Reset the universe.
-    fn reset(&mut self) {
-        self.inner.reset();
+    /// Reset the universe, optionally with a seed for determinism.
+    ///
+    /// If a seed is provided, the universe is recreated with that seed,
+    /// ensuring deterministic replay of all subsequent operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed` - Optional seed for deterministic RNG initialization
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// universe = PyUniverse(width=100.0, height=100.0, depth=50.0)
+    ///
+    /// # Reset with seed for deterministic replay
+    /// universe.reset(seed=42)
+    ///
+    /// # Reset without seed (uses previous seed if one existed)
+    /// universe.reset()
+    /// ```
+    #[pyo3(signature = (seed=None))]
+    fn reset(&mut self, seed: Option<u64>) {
+        if let Some(s) = seed {
+            // Re-create with seed
+            let config = murk::UniverseConfig {
+                bounds: self.inner.bounds(),
+                ..Default::default()
+            };
+            self.inner = murk::Universe::new_with_seed(config, s);
+        } else {
+            self.inner.reset();
+        }
     }
 
     /// Get foveated observation as numpy array.
