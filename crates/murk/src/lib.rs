@@ -59,7 +59,7 @@ pub mod universe;
 pub use field::{Field, FieldConfig, FieldValues};
 pub use hash::hash_universe;
 pub use node::{NodeState, OctreeNode};
-pub use octree::Octree;
+pub use octree::{Direction, Octree};
 pub use query::{QueryResolution, VolumeQuery};
 pub use stamp::{BlendOp, FieldMod, Stamp, StampShape};
 pub use stats::{FieldStats, ScalarStats};

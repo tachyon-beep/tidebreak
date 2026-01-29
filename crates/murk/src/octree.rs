@@ -302,6 +302,47 @@ impl Octree {
         }
     }
 
+    /// Get the cell size at a given position.
+    ///
+    /// Returns the size of the cell containing the given position.
+    /// For empty octrees, this returns the world size.
+    #[must_use]
+    pub fn cell_size_at(&self, position: Vec3) -> f32 {
+        if !self.config.bounds.contains(position) {
+            return 0.0;
+        }
+
+        let result = self.query_point(&PointQuery::new(position));
+        // Cell size = world_size / 2^depth
+        let world_size = self.config.bounds.size().x; // Assuming cubic cells
+        world_size / 2.0_f32.powi(i32::from(result.depth))
+    }
+
+    /// Find the neighbor of a cell in the given direction.
+    ///
+    /// Returns `None` if the neighbor would be outside world bounds.
+    /// Returns the field values at the neighboring cell position.
+    #[must_use]
+    pub fn find_neighbor(&self, position: Vec3, direction: Direction) -> Option<FieldValues> {
+        // Get the cell size at this position
+        let cell_size = self.cell_size_at(position);
+        if cell_size == 0.0 {
+            return None; // Position is outside bounds
+        }
+
+        // Calculate neighbor position (center of adjacent cell)
+        let neighbor_pos = position + direction.offset() * cell_size;
+
+        // Check if neighbor is within world bounds
+        if !self.config.bounds.contains(neighbor_pos) {
+            return None;
+        }
+
+        // Query the field values at the neighbor position
+        let result = self.query_point(&PointQuery::new(neighbor_pos));
+        Some(result.values)
+    }
+
     /// Set a single point value (useful for initialization).
     pub fn set_point(&mut self, position: Vec3, values: FieldValues) {
         if !self.config.bounds.contains(position) {
@@ -368,6 +409,59 @@ pub struct OctreeStats {
     pub max_depth: u8,
 }
 
+/// Direction for neighbor finding.
+///
+/// Represents the 6 cardinal directions in 3D space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
+    /// Positive X direction (+1, 0, 0)
+    PosX,
+    /// Negative X direction (-1, 0, 0)
+    NegX,
+    /// Positive Y direction (0, +1, 0)
+    PosY,
+    /// Negative Y direction (0, -1, 0)
+    NegY,
+    /// Positive Z direction (0, 0, +1)
+    PosZ,
+    /// Negative Z direction (0, 0, -1)
+    NegZ,
+}
+
+impl Direction {
+    /// Get the offset vector for this direction.
+    #[must_use]
+    pub fn offset(self) -> Vec3 {
+        match self {
+            Direction::PosX => Vec3::new(1.0, 0.0, 0.0),
+            Direction::NegX => Vec3::new(-1.0, 0.0, 0.0),
+            Direction::PosY => Vec3::new(0.0, 1.0, 0.0),
+            Direction::NegY => Vec3::new(0.0, -1.0, 0.0),
+            Direction::PosZ => Vec3::new(0.0, 0.0, 1.0),
+            Direction::NegZ => Vec3::new(0.0, 0.0, -1.0),
+        }
+    }
+
+    /// Get the 4 directions in the XY plane (for 2D operations).
+    #[must_use]
+    pub fn xy_directions() -> [Direction; 4] {
+        [Direction::PosX, Direction::NegX, Direction::PosY, Direction::NegY]
+    }
+
+    /// Get all 6 directions.
+    #[must_use]
+    pub fn all() -> [Direction; 6] {
+        [
+            Direction::PosX,
+            Direction::NegX,
+            Direction::PosY,
+            Direction::NegY,
+            Direction::PosZ,
+            Direction::NegZ,
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +503,108 @@ mod tests {
 
         let result = octree.query_volume(&VolumeQuery::new(Vec3::ZERO, 30.0));
         assert!(result.mean(Field::Temperature) > 0.0);
+    }
+
+    // ===== Neighbor Finding Tests =====
+
+    #[test]
+    fn test_find_neighbor_simple() {
+        // Create a small octree with two adjacent cells
+        let mut octree = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+
+        // Set values at two adjacent positions
+        let mut values_a = FieldValues::new();
+        values_a.set(Field::Temperature, 100.0);
+        octree.set_point(Vec3::new(-5.0, 0.0, 0.0), values_a);
+
+        let mut values_b = FieldValues::new();
+        values_b.set(Field::Temperature, 200.0);
+        octree.set_point(Vec3::new(5.0, 0.0, 0.0), values_b);
+
+        // Query neighbor in PosX direction from the first cell
+        let neighbor = octree.find_neighbor(Vec3::new(-5.0, 0.0, 0.0), Direction::PosX);
+        assert!(neighbor.is_some(), "Should find neighbor in PosX direction");
+        let neighbor_values = neighbor.unwrap();
+        assert!(
+            neighbor_values.get(Field::Temperature) > 150.0,
+            "Neighbor should have high temperature (got {})",
+            neighbor_values.get(Field::Temperature)
+        );
+    }
+
+    #[test]
+    fn test_find_neighbor_at_boundary() {
+        // Create an octree and try to find neighbor outside world bounds
+        let octree = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+
+        // Query from near the edge in the direction that would go out of bounds
+        // World is from -50 to +50, so querying PosX from +45 should go outside
+        let neighbor = octree.find_neighbor(Vec3::new(45.0, 0.0, 0.0), Direction::PosX);
+        assert!(
+            neighbor.is_none(),
+            "Should return None when neighbor is outside world bounds"
+        );
+
+        // Also test NegX from -45
+        let neighbor = octree.find_neighbor(Vec3::new(-45.0, 0.0, 0.0), Direction::NegX);
+        assert!(
+            neighbor.is_none(),
+            "Should return None when neighbor is outside world bounds (NegX)"
+        );
+    }
+
+    #[test]
+    fn test_find_neighbor_empty_returns_default() {
+        // Create an octree and set a value at one cell
+        let mut octree = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 10.0);
+
+        let mut values = FieldValues::new();
+        values.set(Field::Temperature, 500.0);
+        octree.set_point(Vec3::new(0.0, 0.0, 0.0), values);
+
+        // Query neighbor in a direction where there's no data (empty cell)
+        // The neighbor should return default values (all zeros)
+        let neighbor = octree.find_neighbor(Vec3::new(0.0, 0.0, 0.0), Direction::NegY);
+        assert!(neighbor.is_some(), "Should find neighbor even if empty");
+        let neighbor_values = neighbor.unwrap();
+        // Empty cells return default FieldValues (all zeros)
+        assert_eq!(
+            neighbor_values.get(Field::Temperature),
+            0.0,
+            "Empty neighbor should return default values"
+        );
+    }
+
+    #[test]
+    fn test_cell_size_at() {
+        let octree = Octree::with_bounds(Bounds::new(100.0, 100.0, 100.0), 1.0);
+
+        // At root level, cell size should be the world size
+        let size = octree.cell_size_at(Vec3::ZERO);
+        assert!(size > 0.0, "Cell size should be positive");
+        // For an empty octree, the root covers the whole world
+        assert_eq!(size, 100.0, "Cell size at root should be world size");
+    }
+
+    #[test]
+    fn test_direction_offset() {
+        assert_eq!(Direction::PosX.offset(), Vec3::new(1.0, 0.0, 0.0));
+        assert_eq!(Direction::NegX.offset(), Vec3::new(-1.0, 0.0, 0.0));
+        assert_eq!(Direction::PosY.offset(), Vec3::new(0.0, 1.0, 0.0));
+        assert_eq!(Direction::NegY.offset(), Vec3::new(0.0, -1.0, 0.0));
+        assert_eq!(Direction::PosZ.offset(), Vec3::new(0.0, 0.0, 1.0));
+        assert_eq!(Direction::NegZ.offset(), Vec3::new(0.0, 0.0, -1.0));
+    }
+
+    #[test]
+    fn test_xy_directions() {
+        let xy = Direction::xy_directions();
+        assert_eq!(xy.len(), 4);
+        assert!(xy.contains(&Direction::PosX));
+        assert!(xy.contains(&Direction::NegX));
+        assert!(xy.contains(&Direction::PosY));
+        assert!(xy.contains(&Direction::NegY));
+        assert!(!xy.contains(&Direction::PosZ));
+        assert!(!xy.contains(&Direction::NegZ));
     }
 }
