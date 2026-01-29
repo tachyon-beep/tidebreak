@@ -264,10 +264,8 @@ impl Universe {
     ///
     /// This propagates fields (diffusion, decay) according to their configurations.
     pub fn step(&mut self, dt: f64) {
-        // TODO: Implement field propagation
-        // For each field with propagation enabled:
-        // - Diffusion: spread values to neighbors
-        // - Decay: reduce values toward default
+        // Propagate fields (diffusion, decay)
+        crate::propagation::propagate_all(self, dt);
 
         self.tick += 1;
         self.time += dt;
@@ -424,5 +422,66 @@ mod tests {
         let hash2 = universe2.state_hash();
 
         assert_eq!(hash1, hash2, "Same seed + same operations must produce identical state (ADR-0003)");
+    }
+
+    #[test]
+    fn test_step_propagates_temperature() {
+        use crate::stamp::{BlendOp, FieldMod, StampShape};
+
+        // Use a small world with coarse resolution for fast tests
+        let mut config = UniverseConfig::with_bounds(64.0, 64.0, 32.0);
+        config.base_resolution = 8.0;
+        let mut universe = Universe::new(config);
+
+        // Use a box stamp to create a hot region at the center
+        // This avoids creating many leaf nodes with zero temperature
+        let hot_stamp = Stamp::new(
+            StampShape::sphere(Vec3::ZERO, 15.0),
+            vec![FieldMod::new(Field::Temperature, BlendOp::Set, 800.0)],
+        );
+        universe.stamp(&hot_stamp);
+
+        // Query a point inside the hot region and outside it
+        let center_temp_before = universe.query_point(Vec3::ZERO).values.get(Field::Temperature);
+        let edge_temp_before = universe.query_point(Vec3::new(10.0, 0.0, 0.0)).values.get(Field::Temperature);
+
+        // The temperature at edge should be affected by the stamp
+        // (it's within the 15-unit radius sphere)
+        assert!(
+            center_temp_before > 500.0,
+            "Center should be hot: {}",
+            center_temp_before
+        );
+        assert!(
+            edge_temp_before > 0.0,
+            "Edge should have some heat from stamp: {}",
+            edge_temp_before
+        );
+
+        // Step multiple times for diffusion to occur
+        // Heat should spread outward (edge gets cooler as heat spreads)
+        // and decay toward ambient (293K)
+        for _ in 0..10 {
+            universe.step(0.5);
+        }
+
+        let center_temp_after = universe.query_point(Vec3::ZERO).values.get(Field::Temperature);
+        let _edge_temp_after = universe.query_point(Vec3::new(10.0, 0.0, 0.0)).values.get(Field::Temperature);
+
+        // Both temperatures should be closer to ambient (293K) after diffusion/decay
+        // Since temperature has Diffusion propagation (rate 0.05), values should move toward equilibrium
+        // The center should cool down as heat spreads out
+        assert!(
+            center_temp_after < center_temp_before,
+            "Center should cool as heat diffuses (before: {}, after: {})",
+            center_temp_before,
+            center_temp_after
+        );
+
+        // Verify that propagation actually happened (temperatures changed)
+        assert!(
+            (center_temp_after - center_temp_before).abs() > 1.0,
+            "Temperature should have changed significantly"
+        );
     }
 }

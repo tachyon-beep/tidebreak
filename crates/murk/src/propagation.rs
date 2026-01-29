@@ -3,6 +3,95 @@
 //! This module provides functions for evolving field values over time through
 //! physical processes like heat diffusion and signal decay.
 
+use glam::Vec3;
+
+use crate::field::{Field, FieldValues, Propagation};
+use crate::octree::Direction;
+use crate::universe::Universe;
+
+/// Propagate all fields for one timestep.
+///
+/// This is the core propagation step that applies diffusion and decay to all
+/// fields based on their configuration. It operates in three phases:
+///
+/// 1. **Collect**: Gather all leaf nodes from the octree (deterministic order)
+/// 2. **Compute**: Calculate new values for each leaf based on propagation rules
+/// 3. **Apply**: Write updated values back to the octree
+///
+/// This separation ensures determinism by reading from a frozen snapshot before
+/// any writes occur.
+pub fn propagate_all(universe: &mut Universe, dt: f64) {
+    let dt_f32 = dt as f32;
+
+    // Phase 1: Collect all leaves
+    let leaves = universe.octree().collect_leaves();
+
+    if leaves.is_empty() {
+        return;
+    }
+
+    // Phase 2: Compute updates for each leaf
+    let updates: Vec<(Vec3, FieldValues)> = leaves
+        .iter()
+        .map(|(pos, old_values)| {
+            let mut new_values = *old_values;
+
+            for field in Field::all() {
+                let config = universe.field_config(*field);
+                let old_val = old_values.get(*field);
+
+                let new_val = match config.propagation {
+                    Propagation::None => old_val,
+                    Propagation::Diffusion { rate } => {
+                        let neighbors = get_xy_neighbor_values(universe, *pos, *field);
+                        apply_diffusion(old_val, &neighbors, rate, dt_f32)
+                    }
+                    Propagation::Decay { rate } => {
+                        apply_decay(old_val, config.default_value, rate, dt_f32)
+                    }
+                    Propagation::DiffusionDecay {
+                        diffusion_rate,
+                        decay_rate,
+                    } => {
+                        let neighbors = get_xy_neighbor_values(universe, *pos, *field);
+                        let diffused = apply_diffusion(old_val, &neighbors, diffusion_rate, dt_f32);
+                        apply_decay(diffused, config.default_value, decay_rate, dt_f32)
+                    }
+                };
+
+                new_values.set(*field, config.clamp(new_val));
+            }
+
+            (*pos, new_values)
+        })
+        .collect();
+
+    // Phase 3: Apply updates
+    for (pos, values) in updates {
+        universe.set_point(pos, values);
+    }
+}
+
+/// Get neighbor field values in the XY plane (4 neighbors).
+///
+/// Returns the field values from up to 4 neighbors (PosX, NegX, PosY, NegY).
+/// For neighbors outside world bounds, the field's configured default value is used.
+/// For empty cells within bounds, the queried value (which may be interpolated) is used.
+fn get_xy_neighbor_values(universe: &Universe, pos: Vec3, field: Field) -> Vec<f32> {
+    let default_value = universe.field_config(field).default_value;
+
+    Direction::xy_directions()
+        .iter()
+        .map(|dir| {
+            universe
+                .octree()
+                .find_neighbor(pos, *dir)
+                .map(|values| values.get(field))
+                .unwrap_or(default_value) // Out-of-bounds uses default
+        })
+        .collect()
+}
+
 /// Apply exponential decay toward a default value.
 ///
 /// Models exponential decay where values approach `default` over time.
