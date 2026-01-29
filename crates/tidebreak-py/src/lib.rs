@@ -35,7 +35,9 @@
 //! print(f"Avg temperature: {stats.mean('temperature')}")
 //! ```
 
+use numpy::{PyArray1, ToPyArray};
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 
 /// Field enum for Python.
 ///
@@ -235,6 +237,96 @@ impl PyUniverse {
     /// Reset the universe.
     fn reset(&mut self) {
         self.inner.reset();
+    }
+
+    /// Get foveated observation as numpy array.
+    ///
+    /// Returns a flat array of field means for each sector in each shell.
+    /// Shape: (total_sectors * num_fields,)
+    ///
+    /// # Arguments
+    ///
+    /// * `position` - Agent position as (x, y, z) tuple
+    /// * `heading` - Agent heading direction as (x, y, z) tuple
+    /// * `shells` - Optional list of shell configurations as dicts with keys:
+    ///   - `radius_inner`: Inner radius of shell
+    ///   - `radius_outer`: Outer radius of shell
+    ///   - `sectors`: Number of angular divisions
+    ///
+    /// # Returns
+    ///
+    /// A flat numpy array of f32 values with shape (total_sectors * num_fields,).
+    /// Default fields are: temperature, noise, occupancy, sonar_return.
+    /// Default shells are: (0-10, 16 sectors), (10-50, 8 sectors), (50-200, 4 sectors).
+    ///
+    /// # Example
+    ///
+    /// ```python
+    /// obs = universe.observe_foveated(
+    ///     position=(0.0, 0.0, 0.0),
+    ///     heading=(1.0, 0.0, 0.0),
+    ///     shells=[
+    ///         {"radius_inner": 0.0, "radius_outer": 10.0, "sectors": 8},
+    ///         {"radius_inner": 10.0, "radius_outer": 50.0, "sectors": 4},
+    ///     ],
+    /// )
+    /// ```
+    #[pyo3(signature = (position, heading, shells=None))]
+    fn observe_foveated<'py>(
+        &self,
+        py: Python<'py>,
+        position: (f32, f32, f32),
+        heading: (f32, f32, f32),
+        shells: Option<&Bound<'py, PyList>>,
+    ) -> PyResult<Bound<'py, PyArray1<f32>>> {
+        let position = glam::Vec3::new(position.0, position.1, position.2);
+        let heading = glam::Vec3::new(heading.0, heading.1, heading.2);
+
+        // Parse shells or use defaults
+        let shell_configs: Vec<murk::query::FoveatedShell> = if let Some(shells) = shells {
+            shells
+                .iter()
+                .map(|item| {
+                    let dict = item.downcast::<pyo3::types::PyDict>()?;
+                    let inner: f32 = dict
+                        .get_item("radius_inner")?
+                        .ok_or_else(|| {
+                            PyErr::new::<pyo3::exceptions::PyKeyError, _>(
+                                "missing key: radius_inner",
+                            )
+                        })?
+                        .extract()?;
+                    let outer: f32 = dict
+                        .get_item("radius_outer")?
+                        .ok_or_else(|| {
+                            PyErr::new::<pyo3::exceptions::PyKeyError, _>(
+                                "missing key: radius_outer",
+                            )
+                        })?
+                        .extract()?;
+                    let sectors: u32 = dict
+                        .get_item("sectors")?
+                        .ok_or_else(|| {
+                            PyErr::new::<pyo3::exceptions::PyKeyError, _>("missing key: sectors")
+                        })?
+                        .extract()?;
+                    Ok(murk::query::FoveatedShell::new(inner, outer, sectors))
+                })
+                .collect::<PyResult<Vec<_>>>()?
+        } else {
+            vec![
+                murk::query::FoveatedShell::new(0.0, 10.0, 16),
+                murk::query::FoveatedShell::new(10.0, 50.0, 8),
+                murk::query::FoveatedShell::new(50.0, 200.0, 4),
+            ]
+        };
+
+        let query = murk::query::FoveatedQuery::new(position, heading).with_shells(shell_configs);
+
+        let result = self.inner.observe_foveated(&query);
+        let flat = result.to_flat_vec(&query.fields);
+
+        Ok(flat.to_pyarray(py))
     }
 }
 
