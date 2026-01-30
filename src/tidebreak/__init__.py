@@ -19,8 +19,17 @@ def _load_rust_extension() -> Any:
 
     _this_file = Path(__file__).resolve()
 
-    # Find the maturin-installed tidebreak package in sys.path
-    for site_path in sys.path:
+    # Build list of candidate locations to search
+    search_paths = list(sys.path)
+
+    # Also check the maturin build directory (relative to repo root)
+    repo_root = _this_file.parent.parent.parent  # src/tidebreak/__init__.py -> repo root
+    maturin_path = repo_root / "crates" / "tidebreak-py" / "python"
+    if maturin_path.exists():
+        search_paths.insert(0, str(maturin_path))
+
+    # Find the maturin-installed tidebreak package
+    for site_path in search_paths:
         ext_path = Path(site_path) / "tidebreak"
         if ext_path.exists() and ext_path.resolve() != _this_file.parent:
             # Found installed tidebreak, look for the _tidebreak.so file
