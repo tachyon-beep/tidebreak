@@ -846,6 +846,144 @@ impl PySimulation {
         let s = seed.unwrap_or(self.inner.seed());
         self.inner = Simulation::new(s);
     }
+
+    /// Get observation for an entity.
+    #[pyo3(signature = (entity_id, max_contacts=16))]
+    fn get_observation(&self, entity_id: PyEntityId, max_contacts: usize) -> Option<PyObservation> {
+        PyObservation::for_entity(self.inner.arena(), entity_id.into(), max_contacts)
+    }
+}
+
+/// Observation for a single agent (ship).
+///
+/// Pre-vectorized observation suitable for DRL training. Contains:
+/// - `own_state`: Position, heading, velocity, and health as a 1D array
+/// - `contacts`: Detected contacts from the sensor track table as a 2D array
+#[pyclass]
+pub struct PyObservation {
+    /// Own state: [x, y, heading, vx, vy, hp, max_hp]
+    own_state: Vec<f32>,
+    /// Contacts: [[x, y, rel_heading, distance, quality], ...]
+    contacts: Vec<Vec<f32>>,
+}
+
+impl PyObservation {
+    /// Build observation for a specific entity.
+    pub fn for_entity(
+        arena: &tidebreak_core::arena::Arena,
+        entity_id: EntityId,
+        max_contacts: usize,
+    ) -> Option<Self> {
+        let entity = arena.get(entity_id)?;
+
+        // Build own state vector
+        let own_state = Self::build_own_state(entity);
+
+        // Build contacts from sensor track table
+        let contacts = Self::build_contacts(entity, max_contacts);
+
+        Some(Self {
+            own_state,
+            contacts,
+        })
+    }
+
+    fn build_own_state(entity: &Entity) -> Vec<f32> {
+        match entity.inner() {
+            EntityInner::Ship(c) => vec![
+                c.transform.position.x,
+                c.transform.position.y,
+                c.transform.heading,
+                c.physics.velocity.x,
+                c.physics.velocity.y,
+                c.combat.hp,
+                c.combat.max_hp,
+            ],
+            EntityInner::Squadron(c) => vec![
+                c.transform.position.x,
+                c.transform.position.y,
+                c.transform.heading,
+                c.physics.velocity.x,
+                c.physics.velocity.y,
+                c.combat.hp,
+                c.combat.max_hp,
+            ],
+            _ => vec![0.0; 7], // Platforms/projectiles shouldn't be agents
+        }
+    }
+
+    fn build_contacts(entity: &Entity, max_contacts: usize) -> Vec<Vec<f32>> {
+        let mut contacts = Vec::with_capacity(max_contacts);
+
+        // Get own position for relative calculations
+        let own_pos = match entity.inner() {
+            EntityInner::Ship(c) => c.transform.position,
+            EntityInner::Squadron(c) => c.transform.position,
+            _ => return Self::pad_contacts(contacts, max_contacts),
+        };
+
+        // Get track table if entity has sensors
+        let tracks = match entity.inner() {
+            EntityInner::Ship(c) => &c.sensor.track_table,
+            _ => return Self::pad_contacts(contacts, max_contacts),
+        };
+
+        for track in tracks.iter().take(max_contacts) {
+            let rel = track.position - own_pos;
+            let distance = rel.length();
+            let rel_heading = rel.y.atan2(rel.x);
+            let quality = track.quality as i32 as f32;
+
+            contacts.push(vec![
+                track.position.x,
+                track.position.y,
+                rel_heading,
+                distance,
+                quality,
+            ]);
+        }
+
+        Self::pad_contacts(contacts, max_contacts)
+    }
+
+    fn pad_contacts(mut contacts: Vec<Vec<f32>>, max_contacts: usize) -> Vec<Vec<f32>> {
+        while contacts.len() < max_contacts {
+            contacts.push(vec![0.0; 5]);
+        }
+        contacts
+    }
+}
+
+#[pymethods]
+impl PyObservation {
+    /// Own state as numpy array.
+    ///
+    /// Returns a 1D array with shape (7,) containing:
+    /// [x, y, heading, vx, vy, hp, max_hp]
+    fn own_state<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f32>> {
+        self.own_state.to_pyarray(py)
+    }
+
+    /// Contacts as 2D numpy array (max_contacts x 5).
+    ///
+    /// Each row contains: [x, y, rel_heading, distance, quality]
+    /// Unused slots are zero-padded.
+    fn contacts<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray2<f32>>> {
+        numpy::PyArray2::from_vec2(py, &self.contacts)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e}")))
+    }
+
+    /// Feature dimension for own_state.
+    #[getter]
+    fn own_state_dim(&self) -> usize {
+        self.own_state.len()
+    }
+
+    /// Number of contact slots.
+    #[getter]
+    fn max_contacts(&self) -> usize {
+        self.contacts.len()
+    }
 }
 
 /// Convert string to Field enum.
@@ -881,5 +1019,6 @@ fn _tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCombatState>()?;
     m.add_class::<PyEntity>()?;
     m.add_class::<PySimulation>()?;
+    m.add_class::<PyObservation>()?;
     Ok(())
 }
