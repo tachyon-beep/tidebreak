@@ -35,7 +35,31 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub use components::{
-    PlatformComponents, ProjectileComponents, ShipComponents, SquadronComponents,
+    // Supporting types
+    AmmoType,
+    CombatState,
+    EmissionsMode,
+    HasCombat,
+    HasInventory,
+    HasPhysics,
+    HasSensor,
+    // Access traits
+    HasTransform,
+    InventoryState,
+    PhysicsState,
+    // Composite component structs
+    PlatformComponents,
+    ProjectileComponents,
+    SensorState,
+    ShipComponents,
+    SquadronComponents,
+    StatId,
+    StatusFlags,
+    Track,
+    TrackQuality,
+    // Core state components
+    TransformState,
+    WeaponState,
 };
 
 /// Unique identifier for an entity.

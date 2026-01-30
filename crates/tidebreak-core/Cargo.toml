@@ -9,6 +9,7 @@ license.workspace = true
 murk = { workspace = true }
 serde = { workspace = true }
 glam = { workspace = true }
+bitflags = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 thiserror = { workspace = true }
