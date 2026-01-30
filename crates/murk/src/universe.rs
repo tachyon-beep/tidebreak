@@ -484,4 +484,87 @@ mod tests {
             "Temperature should have changed significantly"
         );
     }
+
+    /// Fast determinism test using coarse resolution.
+    ///
+    /// Verifies ADR-0003: same seed + same platform + same inputs = identical results.
+    /// Uses base_resolution = 8.0 to keep node count low and test fast (< 1 second).
+    #[test]
+    fn test_propagation_determinism_fast() {
+        // Coarse resolution config for speed
+        let mut config = UniverseConfig::with_bounds(64.0, 64.0, 32.0);
+        config.base_resolution = 8.0;
+
+        // Run 1
+        let mut universe1 = Universe::new_with_seed(config.clone(), 42);
+        universe1.stamp(&Stamp::explosion(Vec3::new(8.0, 8.0, 4.0), 12.0, 0.8));
+        universe1.stamp(&Stamp::fire(Vec3::new(-8.0, -8.0, 4.0), 10.0, 0.6));
+        for _ in 0..5 {
+            universe1.step(0.1);
+        }
+        let hash1 = universe1.state_hash();
+
+        // Run 2 (identical operations)
+        let mut universe2 = Universe::new_with_seed(config, 42);
+        universe2.stamp(&Stamp::explosion(Vec3::new(8.0, 8.0, 4.0), 12.0, 0.8));
+        universe2.stamp(&Stamp::fire(Vec3::new(-8.0, -8.0, 4.0), 10.0, 0.6));
+        for _ in 0..5 {
+            universe2.step(0.1);
+        }
+        let hash2 = universe2.state_hash();
+
+        assert_eq!(
+            hash1, hash2,
+            "Same seed + same operations must produce identical state (ADR-0003)"
+        );
+    }
+
+    /// Test that noise from explosions decays over time.
+    ///
+    /// Noise field has Propagation::Decay { rate: 0.3 } which should cause
+    /// exponential decay toward the default value of 0.0.
+    #[test]
+    fn test_decay_noise_fades() {
+        // Coarse resolution config for speed
+        let mut config = UniverseConfig::with_bounds(64.0, 64.0, 32.0);
+        config.base_resolution = 8.0;
+        let mut universe = Universe::new(config);
+
+        // Create an explosion (generates noise via BlendOp::Add of 120 * intensity)
+        universe.stamp(&Stamp::explosion(Vec3::ZERO, 15.0, 1.0));
+
+        // Measure initial noise at the center
+        let noise_initial = universe.query_point(Vec3::ZERO).values.get(Field::Noise);
+        assert!(
+            noise_initial > 50.0,
+            "Explosion should generate significant noise: {}",
+            noise_initial
+        );
+
+        // Step 20+ times to allow decay (rate = 0.3, dt = 0.5 per step)
+        // After each step: noise = noise * exp(-0.3 * 0.5) = noise * ~0.861
+        // After 20 steps: noise ~ initial * 0.861^20 ~ initial * 0.048
+        for _ in 0..20 {
+            universe.step(0.5);
+        }
+
+        let noise_after = universe.query_point(Vec3::ZERO).values.get(Field::Noise);
+
+        // Noise should be significantly reduced (at least 80% decay)
+        let decay_ratio = noise_after / noise_initial;
+        assert!(
+            decay_ratio < 0.2,
+            "Noise should decay significantly: initial={}, after={}, ratio={}",
+            noise_initial,
+            noise_after,
+            decay_ratio
+        );
+
+        // Noise should still be positive (not completely gone)
+        assert!(
+            noise_after > 0.0,
+            "Noise should still be positive after decay: {}",
+            noise_after
+        );
+    }
 }

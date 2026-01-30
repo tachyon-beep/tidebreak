@@ -437,6 +437,159 @@ propagate_field(field_id, dt):
                 propagate_field_node(child, field_id, dt)
 ```
 
+### 6.5 Field Propagation Implementation
+
+This section documents the detailed implementation of field propagation in Murk. Fields evolve over time through three propagation mechanisms: diffusion, decay, and combined (diffusion + decay).
+
+#### 6.5.1 Diffusion
+
+Diffusion models the spreading of continuous quantities like heat and salinity through space. It uses a discrete Laplacian approximation over the 4 XY neighbors (per ADR-0002's discrete depth layers, diffusion occurs within depth layers, not across them).
+
+**Formula:**
+```
+new_value = old_value + rate × dt × Σ(neighbor_value - old_value)
+```
+
+Where the sum is over the 4 cardinal XY neighbors (±X, ±Y). This is equivalent to:
+```
+new_value = old_value + rate × dt × (sum_of_neighbors - 4 × old_value)
+```
+
+**Default Rates:**
+| Field | Diffusion Rate | Notes |
+|-------|----------------|-------|
+| Temperature | 0.05 | Heat spreads moderately fast |
+| Salinity | 0.001 | Salinity spreads very slowly |
+
+**Example (Temperature):**
+```rust
+// For a cell with temperature 100 and neighbors [90, 95, 105, 110]
+let old = 100.0;
+let neighbors = [90.0, 95.0, 105.0, 110.0];
+let rate = 0.05;
+let dt = 0.1;
+
+let laplacian = neighbors.iter().map(|n| n - old).sum::<f32>();
+// laplacian = (90-100) + (95-100) + (105-100) + (110-100) = -10 - 5 + 5 + 10 = 0
+
+let new = old + rate * dt * laplacian;
+// new = 100.0 (no change when neighbors average equals cell value)
+```
+
+#### 6.5.2 Decay
+
+Decay models the fading of transient signals toward a default/ambient value. Uses exponential decay toward a target.
+
+**Formula:**
+```
+new_value = default + (old_value - default) × exp(-rate × dt)
+```
+
+This ensures values asymptotically approach the default value at a rate controlled by the decay constant.
+
+**Default Rates:**
+| Field | Decay Rate | Default Value | Notes |
+|-------|------------|---------------|-------|
+| Noise | 0.3 | 0.0 | Fast fade - transient acoustic events |
+| Signal | 0.1 | 0.0 | Medium fade - generic signals |
+| SonarReturn | 0.5 | 0.0 | Very fast fade - active sonar pings |
+
+**Example (Noise):**
+```rust
+let old = 120.0;  // dB from explosion
+let default = 0.0;
+let rate = 0.3;
+let dt = 1.0;  // 1 second
+
+let new = default + (old - default) * (-rate * dt).exp();
+// new = 0 + 120 * exp(-0.3) ≈ 0 + 120 * 0.741 ≈ 88.9 dB
+
+// After 10 seconds:
+// new = 0 + 120 * exp(-3.0) ≈ 0 + 120 * 0.050 ≈ 6.0 dB
+```
+
+#### 6.5.3 Combined (Diffusion + Decay)
+
+Some fields require both spreading and fading. The combined propagation applies diffusion first, then decay to the diffused result.
+
+**Sequence:**
+1. Apply diffusion: `intermediate = old + rate_diffusion × dt × Σ(neighbor - old)`
+2. Apply decay: `new = default + (intermediate - default) × exp(-rate_decay × dt)`
+
+**Default Rates:**
+| Field | Diffusion Rate | Decay Rate | Notes |
+|-------|----------------|------------|-------|
+| Smoke | 0.1 | 0.02 | Spreads and dissipates slowly |
+
+**Example (Smoke):**
+```rust
+let old = 0.8;  // Dense smoke
+let neighbors = [0.4, 0.6, 0.5, 0.3];  // Less dense neighbors
+let default = 0.0;
+let diffusion_rate = 0.1;
+let decay_rate = 0.02;
+let dt = 0.5;
+
+// Step 1: Diffusion
+let laplacian = neighbors.iter().map(|n| n - old).sum::<f32>();
+// laplacian = (0.4-0.8) + (0.6-0.8) + (0.5-0.8) + (0.3-0.8)
+//           = -0.4 - 0.2 - 0.3 - 0.5 = -1.4
+let intermediate = old + diffusion_rate * dt * laplacian;
+// intermediate = 0.8 + 0.1 * 0.5 * (-1.4) = 0.8 - 0.07 = 0.73
+
+// Step 2: Decay
+let new = default + (intermediate - default) * (-decay_rate * dt).exp();
+// new = 0 + 0.73 * exp(-0.01) ≈ 0.73 * 0.99 ≈ 0.723
+```
+
+#### 6.5.4 Implementation Notes
+
+**Two-Buffer Approach for Determinism:**
+
+Field propagation uses a two-buffer strategy to ensure determinism:
+1. Read all values from the current buffer
+2. Compute new values based on current buffer reads
+3. Write all new values to the next buffer
+4. Swap buffers atomically
+
+This prevents read-after-write hazards where update order would affect results.
+
+```rust
+// Conceptual implementation
+fn propagate_all(current: &FieldBuffer, next: &mut FieldBuffer, dt: f32) {
+    for cell in cells_in_deterministic_order() {
+        let old = current.get(cell);
+        let neighbors = get_neighbors(cell)
+            .map(|n| current.get(n).unwrap_or(default));
+        let new = compute_propagation(old, neighbors, dt);
+        next.set(cell, new);
+    }
+}
+```
+
+**4-Neighbor XY Diffusion:**
+
+Per ADR-0002 (Discrete Depth Layers), the ocean is organized into discrete depth layers (surface, submerged, abyssal). Diffusion occurs within XY planes at each depth layer, not across depth boundaries. This models:
+- Thermoclines that resist vertical heat transfer
+- Haloclines that maintain salinity stratification
+- Layer-specific acoustic propagation characteristics
+
+**Deterministic Iteration Order:**
+
+To ensure reproducible results across runs and platforms, cells are iterated in octant order (Morton/Z-order). This provides:
+- Consistent update sequence regardless of tree structure changes
+- Locality-friendly access patterns for cache efficiency
+- Reproducible floating-point accumulation order
+
+**Boundary Handling:**
+
+For cells at world boundaries, out-of-bounds neighbors use the field's default value:
+- Temperature: ambient temperature (configurable, e.g., 15°C for ocean)
+- Smoke: 0.0 (clean air outside world)
+- Noise: 0.0 (silence outside world)
+
+This creates natural boundary conditions where fields diffuse toward ambient at edges.
+
 ---
 
 ## 7. Python API
