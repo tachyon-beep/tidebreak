@@ -32,6 +32,7 @@ pub use murk;
 
 // Core modules
 pub mod entity;
+pub mod output;
 
 // Placeholder modules - to be implemented
 // pub mod arena;
