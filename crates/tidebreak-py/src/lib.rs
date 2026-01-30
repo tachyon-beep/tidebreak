@@ -847,6 +847,55 @@ impl PySimulation {
         self.inner = Simulation::new(s);
     }
 
+    /// Apply an action dict to an entity.
+    ///
+    /// Action dict can contain:
+    /// - "velocity": (vx, vy) tuple
+    /// - "heading": float in radians
+    fn apply_action(
+        &mut self,
+        entity_id: PyEntityId,
+        action: &Bound<'_, pyo3::types::PyDict>,
+    ) -> PyResult<()> {
+        let id: EntityId = entity_id.into();
+
+        // Parse velocity
+        let velocity: Option<(f32, f32)> = action
+            .get_item("velocity")?
+            .map(|v| v.extract())
+            .transpose()?;
+
+        // Parse heading
+        let heading: Option<f32> = action
+            .get_item("heading")?
+            .map(|h| h.extract())
+            .transpose()?;
+
+        if let Some(entity) = self.inner.arena_mut().get_mut(id) {
+            if let EntityInner::Ship(c) = entity.inner_mut() {
+                if let Some((vx, vy)) = velocity {
+                    let vel = Vec2::new(vx, vy);
+                    // Clamp to max speed
+                    let clamped = if vel.length() > c.physics.max_speed {
+                        vel.normalize() * c.physics.max_speed
+                    } else {
+                        vel
+                    };
+                    c.physics.velocity = clamped;
+                }
+
+                if let Some(h) = heading {
+                    c.transform.heading = h;
+                }
+            }
+        }
+
+        // Update spatial index after position changes
+        self.inner.arena_mut().update_spatial(id);
+
+        Ok(())
+    }
+
     /// Get observation for an entity.
     #[pyo3(signature = (entity_id, max_contacts=16))]
     fn get_observation(&self, entity_id: PyEntityId, max_contacts: usize) -> Option<PyObservation> {
