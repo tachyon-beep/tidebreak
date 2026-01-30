@@ -12,6 +12,7 @@ glam = { workspace = true }
 bitflags = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

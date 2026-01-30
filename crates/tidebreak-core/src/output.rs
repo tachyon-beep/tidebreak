@@ -48,6 +48,8 @@
 //! assert!(matches!(envelope.output(), Output::Command(_)));
 //! ```
 
+use std::borrow::Cow;
+
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -61,25 +63,50 @@ use crate::entity::EntityId;
 
 /// Unique identifier for a plugin type.
 ///
-/// `PluginId` wraps a string that identifies a plugin by its registered name.
-/// Plugin IDs can be created from static strings at compile time.
+/// `PluginId` uses `Cow<'static, str>` internally to allow both:
+/// - Zero-allocation static strings for built-in plugins (compile-time construction)
+/// - Owned strings for dynamic plugin IDs or deserialization
 ///
 /// # Example
 ///
 /// ```
 /// use tidebreak_core::output::PluginId;
 ///
-/// let movement_plugin = PluginId::new("movement");
+/// // Static string - zero allocation
+/// const MOVEMENT_PLUGIN: PluginId = PluginId::from_static("movement");
+///
+/// // Runtime creation
 /// let weapon_plugin = PluginId::new("weapon_control");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PluginId(String);
+#[serde(transparent)]
+pub struct PluginId(Cow<'static, str>);
 
 impl PluginId {
-    /// Creates a new `PluginId` from a string.
+    /// Creates a new `PluginId` from a string slice.
+    ///
+    /// This allocates a new string. For static strings known at compile time,
+    /// prefer [`from_static`](Self::from_static) for zero allocation.
     #[must_use]
     pub fn new(id: &str) -> Self {
-        Self(id.to_string())
+        Self(Cow::Owned(id.to_string()))
+    }
+
+    /// Creates a `PluginId` from a static string without allocation.
+    ///
+    /// This is useful for compile-time constants and built-in plugin IDs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tidebreak_core::output::PluginId;
+    ///
+    /// const MOVEMENT: PluginId = PluginId::from_static("movement");
+    /// const WEAPON: PluginId = PluginId::from_static("weapon");
+    /// ```
+    #[must_use]
+    pub const fn from_static(id: &'static str) -> Self {
+        Self(Cow::Borrowed(id))
     }
 
     /// Returns the plugin ID as a string slice.
@@ -95,15 +122,15 @@ impl fmt::Display for PluginId {
     }
 }
 
-impl From<&str> for PluginId {
-    fn from(s: &str) -> Self {
-        Self::new(s)
+impl From<&'static str> for PluginId {
+    fn from(s: &'static str) -> Self {
+        Self::from_static(s)
     }
 }
 
 impl From<String> for PluginId {
     fn from(s: String) -> Self {
-        Self(s)
+        Self(Cow::Owned(s))
     }
 }
 

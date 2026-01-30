@@ -601,7 +601,7 @@ impl Default for InventoryState {
 ///
 /// Ships are the primary naval units in combat, ranging from jetskis to mobile
 /// city-ships. They have full physics, combat, sensor, and inventory systems.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ShipComponents {
     /// Position and heading
     pub transform: TransformState,
@@ -653,23 +653,12 @@ impl ShipComponents {
     }
 }
 
-impl Default for ShipComponents {
-    fn default() -> Self {
-        Self {
-            transform: TransformState::default(),
-            physics: PhysicsState::default(),
-            combat: CombatState::default(),
-            sensor: SensorState::default(),
-            inventory: InventoryState::default(),
-        }
-    }
-}
 
 /// Components for Platform entities.
 ///
 /// Platforms are static or semi-static installations (buoys, oil rigs, bases).
 /// They have position and sensors but no physics for movement.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct PlatformComponents {
     /// Position and heading
     pub transform: TransformState,
@@ -701,14 +690,6 @@ impl PlatformComponents {
     }
 }
 
-impl Default for PlatformComponents {
-    fn default() -> Self {
-        Self {
-            transform: TransformState::default(),
-            sensor: SensorState::default(),
-        }
-    }
-}
 
 /// Components for Projectile entities.
 ///
@@ -790,7 +771,13 @@ impl SquadronComponents {
     }
 
     /// Builder method to set the number of craft (affects HP).
+    ///
+    /// # Precision Note
+    ///
+    /// The `u32` to `f32` conversion may lose precision for very large counts
+    /// (above 16,777,216), but squadron sizes in practice are small (tens of craft).
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn with_craft_count(mut self, count: u32, hp_per_craft: f32) -> Self {
         let total_hp = count as f32 * hp_per_craft;
         self.combat = CombatState::new(total_hp);

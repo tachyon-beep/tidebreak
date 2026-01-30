@@ -34,17 +34,30 @@ pub use murk;
 pub mod arena;
 pub mod entity;
 pub mod output;
+pub mod plugin;
+pub mod plugins;
+pub mod resolver;
+pub mod simulation;
+pub mod world_view;
 
 // Placeholder modules - to be implemented
-// pub mod plugin;
-// pub mod resolver;
 // pub mod contracts;
 
 // Re-exports for convenience
 pub use arena::{Arena, SpatialIndex};
+pub use output::PluginId;
+pub use plugin::{ComponentKind, Plugin, PluginContext, PluginDeclaration, PluginRegistry};
+pub use plugins::{MovementPlugin, ProjectilePlugin, SensorPlugin, WeaponPlugin};
+pub use resolver::{CombatResolver, EventResolver, PhysicsResolver, Resolver};
+pub use simulation::Simulation;
+pub use world_view::WorldView;
+
+// Test modules
+#[cfg(test)]
+mod tests;
 
 #[cfg(test)]
-mod tests {
+mod basic_tests {
     use super::*;
     use crate::entity::{EntityInner, EntityTag, ShipComponents};
 

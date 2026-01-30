@@ -170,7 +170,7 @@ impl fmt::Display for EntityTag {
 /// entity components. Each variant contains the component struct for that
 /// entity type.
 ///
-/// # Consistency with EntityTag
+/// # Consistency with `EntityTag`
 ///
 /// The `EntityInner` variant should always match the entity's `EntityTag`.
 /// For example, `EntityTag::Ship` must pair with `EntityInner::Ship(_)`.

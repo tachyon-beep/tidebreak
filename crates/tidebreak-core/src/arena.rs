@@ -12,6 +12,33 @@
 //! order (required by ADR-0003). Entity IDs are monotonically increasing, and the
 //! `BTreeMap`'s natural ordering guarantees consistent iteration across platforms.
 //!
+//! # Spatial Index Synchronization
+//!
+//! **Important**: The spatial index is NOT automatically synchronized when entity
+//! positions change. This is an intentional design choice for performance:
+//!
+//! - When modifying entity position via `get_mut()`, you **must** call
+//!   `update_spatial(id)` afterward to sync the index.
+//! - This allows batch updates: modify many entities first, then sync all
+//!   spatial indices at once before queries.
+//! - Spawning and despawning automatically update the spatial index.
+//!
+//! ```
+//! # use tidebreak_core::arena::Arena;
+//! # use tidebreak_core::entity::{EntityTag, EntityInner, ShipComponents};
+//! # use glam::Vec2;
+//! # let mut arena = Arena::new();
+//! # let ship_id = arena.spawn(EntityTag::Ship, EntityInner::Ship(ShipComponents::default()));
+//! // After modifying position:
+//! if let Some(entity) = arena.get_mut(ship_id) {
+//!     if let Some(ship) = entity.as_ship_mut() {
+//!         ship.transform.position = Vec2::new(500.0, 500.0);
+//!     }
+//! }
+//! // REQUIRED: sync spatial index after position change
+//! arena.update_spatial(ship_id);
+//! ```
+//!
 //! # Example
 //!
 //! ```
@@ -212,11 +239,18 @@ pub struct Arena {
     /// Monotonically increasing entity ID counter.
     next_id: u64,
     /// Entity storage with deterministic iteration order.
-    pub entities: BTreeMap<EntityId, Entity>,
+    ///
+    /// Use `entity_ids_sorted()`, `entities_sorted()`, or `entities_sorted_mut()`
+    /// for iteration. Use `get()` or `get_mut()` for single entity access.
+    entities: BTreeMap<EntityId, Entity>,
     /// Spatial index for proximity queries.
-    pub spatial: SpatialIndex,
+    ///
+    /// Use `spatial()` or `spatial_mut()` to access the index.
+    spatial: SpatialIndex,
     /// Current simulation tick.
-    pub tick: u64,
+    ///
+    /// Use `current_tick()` to read and `advance_tick()` to increment.
+    tick: u64,
     /// Monotonically increasing trace ID counter.
     next_trace_id: u64,
 }
@@ -393,8 +427,17 @@ impl Arena {
 
     /// Helper to extract position from an entity's inner components.
     ///
-    /// Currently all entity types have a position, but we return `Option`
-    /// for future extensibility (e.g., abstract entities without spatial presence).
+    /// # Returns
+    ///
+    /// Currently all entity types have a position, so this always returns `Some`.
+    /// However, we return `Option<Vec2>` for future extensibility:
+    ///
+    /// - Abstract entities (e.g., fleet command, faction state) may lack spatial presence
+    /// - Entities being transferred between layers may temporarily have no position
+    /// - This allows callers to handle the None case gracefully without breaking changes
+    ///
+    /// The `#[allow(clippy::unnecessary_wraps)]` acknowledges that today this always
+    /// returns `Some`, but the API contract explicitly supports `None` for future use.
     #[allow(clippy::unnecessary_wraps)]
     fn get_entity_position(entity: &Entity) -> Option<Vec2> {
         match entity.inner() {
