@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import gymnasium as gym
 import numpy as np
 import pytest
 
-from tidebreak.envs import CombatEnv, FlatActionWrapper, NormalizedObsWrapper
+from tidebreak.envs import CombatEnv, FlatActionWrapper, NormalizedObsWrapper, make_sb3_env
 
 
 class TestFlatActionWrapper:
@@ -259,6 +260,61 @@ class TestNormalizedObsWrapper:
             quality_norm = obs[idx + 5]
             # Quality should be in [0, 1] range (from 0-100 raw)
             assert 0.0 <= quality_norm <= 1.0, f"Quality {quality_norm} not in [0, 1]"
+
+
+class TestMakeSB3Env:
+    """Tests for make_sb3_env factory function."""
+
+    def test_creates_wrapped_env(self) -> None:
+        """make_sb3_env creates env with Box action and observation spaces."""
+        env = make_sb3_env()
+
+        # Action space should be flat Box (3,)
+        assert isinstance(env.action_space, gym.spaces.Box)
+        assert env.action_space.shape == (3,)
+
+        # Observation space should be flat Box
+        assert isinstance(env.observation_space, gym.spaces.Box)
+        # Default: 7 + 6*16 + 2 = 105
+        assert env.observation_space.shape == (105,)
+
+    def test_sb3_ppo_accepts_env(self) -> None:
+        """PPO from stable-baselines3 accepts the wrapped environment."""
+        sb3 = pytest.importorskip("stable_baselines3")
+        PPO = sb3.PPO
+
+        env = make_sb3_env(max_steps=10)
+        model = PPO("MlpPolicy", env, verbose=0)
+        model.learn(total_timesteps=10)
+
+    def test_gymnasium_compliance(self) -> None:
+        """Wrapped env passes Gymnasium's env_checker."""
+        from gymnasium.utils.env_checker import check_env
+
+        env = make_sb3_env(max_steps=100)
+        check_env(env, skip_render_check=True)
+
+
+class TestDeterminism:
+    """Tests for deterministic replay with same seed."""
+
+    def test_same_seed_same_trajectory(self) -> None:
+        """Same seed produces identical observations and rewards."""
+        env1 = make_sb3_env()
+        env2 = make_sb3_env()
+
+        obs1, _ = env1.reset(seed=42)
+        obs2, _ = env2.reset(seed=42)
+
+        np.testing.assert_array_equal(obs1, obs2)
+
+        action = np.array([0.5, 0.2, -0.1], dtype=np.float32)
+
+        for _ in range(10):
+            obs1, r1, _, _, _ = env1.step(action)
+            obs2, r2, _, _, _ = env2.step(action)
+            np.testing.assert_array_almost_equal(obs1, obs2)
+            assert r1 == r2
 
 
 if __name__ == "__main__":
