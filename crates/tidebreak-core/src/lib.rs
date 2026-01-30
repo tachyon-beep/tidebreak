@@ -31,40 +31,35 @@
 pub use murk;
 
 // Core modules
+pub mod arena;
 pub mod entity;
 pub mod output;
 
 // Placeholder modules - to be implemented
-// pub mod arena;
 // pub mod plugin;
 // pub mod resolver;
 // pub mod contracts;
 
-/// Placeholder for Arena (combat simulator).
-pub struct Arena {
-    _placeholder: (),
-}
-
-impl Arena {
-    /// Create a new arena.
-    #[must_use]
-    pub fn new() -> Self {
-        Self { _placeholder: () }
-    }
-}
-
-impl Default for Arena {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Re-exports for convenience
+pub use arena::{Arena, SpatialIndex};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::{EntityInner, EntityTag, ShipComponents};
 
     #[test]
     fn test_arena_creation() {
         let _arena = Arena::new();
+    }
+
+    #[test]
+    fn test_arena_spawn_and_get() {
+        let mut arena = Arena::new();
+        let id = arena.spawn(
+            EntityTag::Ship,
+            EntityInner::Ship(ShipComponents::default()),
+        );
+        assert!(arena.get(id).is_some());
     }
 }
