@@ -46,6 +46,7 @@ build/
 runs/
 logs/
 checkpoints/
+training_output/
 *.pt
 *.pth
 *.onnx
