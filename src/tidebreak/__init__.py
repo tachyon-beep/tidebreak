@@ -44,21 +44,54 @@ def _load_rust_extension() -> Any:
 _rust = _load_rust_extension()
 
 if _rust is not None:
+    # Murk bindings (existing)
     Field = _rust.Field
     PyPointResult = _rust.PyPointResult
     PyQueryResult = _rust.PyQueryResult
     PyUniverse = _rust.PyUniverse
+
+    # Tidebreak-core bindings (new)
+    PyEntityId = _rust.PyEntityId
+    PyEntityTag = _rust.PyEntityTag
+    PyTransformState = _rust.PyTransformState
+    PyPhysicsState = _rust.PyPhysicsState
+    PyCombatState = _rust.PyCombatState
+    PyEntity = _rust.PyEntity
+    PySimulation = _rust.PySimulation
+    PyObservation = _rust.PyObservation
+
+    # Aliases for convenience
     Universe = PyUniverse
-    PointResult = PyPointResult
-    QueryResult = PyQueryResult
+    Simulation = PySimulation
+    EntityId = PyEntityId
+    EntityTag = PyEntityTag
+    Entity = PyEntity
+
     __all__ = [
+        # Murk types
         "Field",
         "PyPointResult",
         "PyQueryResult",
         "PyUniverse",
         "Universe",
-        "PointResult",
-        "QueryResult",
+        # Entity types
+        "PyEntityId",
+        "PyEntityTag",
+        "EntityId",
+        "EntityTag",
+        # Component types
+        "PyTransformState",
+        "PyPhysicsState",
+        "PyCombatState",
+        # Entity wrapper
+        "PyEntity",
+        "Entity",
+        # Simulation
+        "PySimulation",
+        "Simulation",
+        # DRL
+        "PyObservation",
+        # Envs submodule
         "envs",
     ]
     del _rust

@@ -7,19 +7,54 @@ including the Murk spatial substrate and Gymnasium environments for DRL training
 from __future__ import annotations
 
 # Import from the compiled Rust extension
-from tidebreak._tidebreak import Field, PyPointResult, PyQueryResult, PyUniverse
+from tidebreak._tidebreak import (
+    # Murk bindings (existing)
+    Field,
+    PyCombatState,
+    PyEntity,
+    # Tidebreak-core bindings (new)
+    PyEntityId,
+    PyEntityTag,
+    PyObservation,
+    PyPhysicsState,
+    PyPointResult,
+    PyQueryResult,
+    PySimulation,
+    PyTransformState,
+    PyUniverse,
+)
 
-# Convenience aliases
+# Aliases for convenience
 Universe = PyUniverse
-PointResult = PyPointResult
-QueryResult = PyQueryResult
+Simulation = PySimulation
+EntityId = PyEntityId
+EntityTag = PyEntityTag
+Entity = PyEntity
 
 __all__ = [
-    "Universe",
-    "PyUniverse",
-    "PointResult",
-    "PyPointResult",
-    "QueryResult",
-    "PyQueryResult",
+    # Murk types
     "Field",
+    "PyPointResult",
+    "PyQueryResult",
+    "PyUniverse",
+    "Universe",
+    # Entity types
+    "PyEntityId",
+    "PyEntityTag",
+    "EntityId",
+    "EntityTag",
+    # Component types
+    "PyTransformState",
+    "PyPhysicsState",
+    "PyCombatState",
+    # Entity wrapper
+    "PyEntity",
+    "Entity",
+    # Simulation
+    "PySimulation",
+    "Simulation",
+    # DRL
+    "PyObservation",
+    # Envs submodule
+    "envs",
 ]
