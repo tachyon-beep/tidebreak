@@ -38,6 +38,7 @@
 use numpy::{PyArray1, ToPyArray};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use tidebreak_core::entity::components::{CombatState, PhysicsState, StatusFlags, TransformState};
 use tidebreak_core::entity::{EntityId, EntityTag};
 
 /// Field enum for Python.
@@ -522,6 +523,147 @@ impl From<PyEntityTag> for EntityTag {
     }
 }
 
+/// Transform state (position and heading).
+#[pyclass(frozen)]
+#[derive(Clone)]
+pub struct PyTransformState {
+    /// X position.
+    #[pyo3(get)]
+    pub x: f32,
+    /// Y position.
+    #[pyo3(get)]
+    pub y: f32,
+    /// Heading in radians (CCW from +X).
+    #[pyo3(get)]
+    pub heading: f32,
+}
+
+impl From<&TransformState> for PyTransformState {
+    fn from(t: &TransformState) -> Self {
+        Self {
+            x: t.position.x,
+            y: t.position.y,
+            heading: t.heading,
+        }
+    }
+}
+
+#[pymethods]
+impl PyTransformState {
+    /// Get position as (x, y) tuple.
+    #[getter]
+    fn position(&self) -> (f32, f32) {
+        (self.x, self.y)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TransformState(x={:.2}, y={:.2}, heading={:.2})",
+            self.x, self.y, self.heading
+        )
+    }
+}
+
+/// Physics state (velocity and limits).
+#[pyclass(frozen)]
+#[derive(Clone)]
+pub struct PyPhysicsState {
+    #[pyo3(get)]
+    pub vx: f32,
+    #[pyo3(get)]
+    pub vy: f32,
+    #[pyo3(get)]
+    pub angular_velocity: f32,
+    #[pyo3(get)]
+    pub max_speed: f32,
+    #[pyo3(get)]
+    pub max_turn_rate: f32,
+}
+
+impl From<&PhysicsState> for PyPhysicsState {
+    fn from(p: &PhysicsState) -> Self {
+        Self {
+            vx: p.velocity.x,
+            vy: p.velocity.y,
+            angular_velocity: p.angular_velocity,
+            max_speed: p.max_speed,
+            max_turn_rate: p.max_turn_rate,
+        }
+    }
+}
+
+#[pymethods]
+impl PyPhysicsState {
+    /// Get velocity as (vx, vy) tuple.
+    #[getter]
+    fn velocity(&self) -> (f32, f32) {
+        (self.vx, self.vy)
+    }
+
+    /// Get current speed.
+    #[getter]
+    fn speed(&self) -> f32 {
+        (self.vx * self.vx + self.vy * self.vy).sqrt()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PhysicsState(vx={:.2}, vy={:.2}, speed={:.2})",
+            self.vx,
+            self.vy,
+            self.speed()
+        )
+    }
+}
+
+/// Combat state (HP and status).
+#[pyclass(frozen)]
+#[derive(Clone)]
+pub struct PyCombatState {
+    #[pyo3(get)]
+    pub hp: f32,
+    #[pyo3(get)]
+    pub max_hp: f32,
+    #[pyo3(get)]
+    pub weapon_count: usize,
+    #[pyo3(get)]
+    pub is_destroyed: bool,
+    #[pyo3(get)]
+    pub is_mobility_disabled: bool,
+}
+
+impl From<&CombatState> for PyCombatState {
+    fn from(c: &CombatState) -> Self {
+        Self {
+            hp: c.hp,
+            max_hp: c.max_hp,
+            weapon_count: c.weapons.len(),
+            is_destroyed: c.status_flags.contains(StatusFlags::DESTROYED),
+            is_mobility_disabled: c.status_flags.contains(StatusFlags::MOBILITY_DISABLED),
+        }
+    }
+}
+
+#[pymethods]
+impl PyCombatState {
+    /// Get health as percentage [0, 1].
+    #[getter]
+    fn health_pct(&self) -> f32 {
+        if self.max_hp > 0.0 {
+            self.hp / self.max_hp
+        } else {
+            0.0
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CombatState(hp={:.1}/{:.1}, weapons={})",
+            self.hp, self.max_hp, self.weapon_count
+        )
+    }
+}
+
 /// Convert string to Field enum.
 fn str_to_field(s: &str) -> murk::Field {
     match s.to_lowercase().as_str() {
@@ -550,5 +692,8 @@ fn _tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Field>()?;
     m.add_class::<PyEntityId>()?;
     m.add_class::<PyEntityTag>()?;
+    m.add_class::<PyTransformState>()?;
+    m.add_class::<PyPhysicsState>()?;
+    m.add_class::<PyCombatState>()?;
     Ok(())
 }
