@@ -35,11 +35,13 @@
 //! print(f"Avg temperature: {stats.mean('temperature')}")
 //! ```
 
+use glam::Vec2;
 use numpy::{PyArray1, ToPyArray};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use tidebreak_core::entity::components::{CombatState, PhysicsState, StatusFlags, TransformState};
-use tidebreak_core::entity::{Entity, EntityId, EntityInner, EntityTag};
+use tidebreak_core::entity::{Entity, EntityId, EntityInner, EntityTag, ShipComponents};
+use tidebreak_core::simulation::Simulation;
 
 /// Field enum for Python.
 ///
@@ -753,6 +755,99 @@ impl PyEntity {
     }
 }
 
+/// Main simulation orchestrator.
+#[pyclass]
+pub struct PySimulation {
+    inner: Simulation,
+}
+
+#[pymethods]
+impl PySimulation {
+    /// Create a new simulation with the given seed.
+    #[new]
+    #[pyo3(signature = (seed=42))]
+    fn new(seed: u64) -> Self {
+        Self {
+            inner: Simulation::new(seed),
+        }
+    }
+
+    /// Current tick number.
+    #[getter]
+    fn tick(&self) -> u64 {
+        self.inner.tick()
+    }
+
+    /// Master seed.
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.inner.seed()
+    }
+
+    /// Number of entities in the arena.
+    #[getter]
+    fn entity_count(&self) -> usize {
+        self.inner.arena().entity_count()
+    }
+
+    /// Execute one simulation step.
+    ///
+    /// Releases the GIL during execution for better Python threading.
+    fn step(&mut self, py: Python) {
+        py.allow_threads(|| {
+            self.inner.step();
+        });
+    }
+
+    /// Spawn a ship at the given position.
+    #[pyo3(signature = (x, y, heading=0.0))]
+    fn spawn_ship(&mut self, x: f32, y: f32, heading: f32) -> PyEntityId {
+        let components = ShipComponents::at_position(Vec2::new(x, y), heading);
+        let id = self
+            .inner
+            .arena_mut()
+            .spawn(EntityTag::Ship, EntityInner::Ship(components));
+        id.into()
+    }
+
+    /// Get entity by ID.
+    fn get_entity(&self, id: PyEntityId) -> Option<PyEntity> {
+        self.inner.arena().get(id.into()).map(PyEntity::from_entity)
+    }
+
+    /// Get all entity IDs.
+    fn entity_ids(&self) -> Vec<PyEntityId> {
+        self.inner
+            .arena()
+            .entity_ids_sorted()
+            .map(|id| id.into())
+            .collect()
+    }
+
+    /// Query entities within radius.
+    fn query_radius(&self, x: f32, y: f32, radius: f32) -> Vec<PyEntityId> {
+        self.inner
+            .arena()
+            .spatial()
+            .query_radius(Vec2::new(x, y), radius)
+            .into_iter()
+            .map(|id| id.into())
+            .collect()
+    }
+
+    /// Despawn an entity.
+    fn despawn(&mut self, id: PyEntityId) -> bool {
+        self.inner.arena_mut().despawn(id.into()).is_some()
+    }
+
+    /// Reset simulation with optional new seed.
+    #[pyo3(signature = (seed=None))]
+    fn reset(&mut self, seed: Option<u64>) {
+        let s = seed.unwrap_or(self.inner.seed());
+        self.inner = Simulation::new(s);
+    }
+}
+
 /// Convert string to Field enum.
 fn str_to_field(s: &str) -> murk::Field {
     match s.to_lowercase().as_str() {
@@ -785,5 +880,6 @@ fn _tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPhysicsState>()?;
     m.add_class::<PyCombatState>()?;
     m.add_class::<PyEntity>()?;
+    m.add_class::<PySimulation>()?;
     Ok(())
 }
