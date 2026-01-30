@@ -1,7 +1,7 @@
-"""Action space wrappers for SB3 compatibility.
+"""Action and observation space wrappers for SB3 compatibility.
 
-Stable-baselines3 does not support Dict action spaces. These wrappers
-flatten the Dict action space to Box for compatibility with SB3 algorithms.
+Stable-baselines3 does not support Dict action/observation spaces. These wrappers
+flatten and normalize Dict spaces to Box for compatibility with SB3 algorithms.
 """
 
 from __future__ import annotations
@@ -37,3 +37,97 @@ class FlatActionWrapper(gym.ActionWrapper):
             "turn_rate": np.array([action[1]], dtype=np.float32),
             "fire": 1 if action[2] >= 0.0 else 0,
         }
+
+
+class NormalizedObsWrapper(gym.ObservationWrapper):
+    """Normalize Dict observation to flat Box for better training.
+
+    Normalizes positions, velocities, angles, and HP to [-1, 1] or [0, 1] range.
+    Angles are encoded as [sin(theta), cos(theta)] for smooth gradients.
+
+    Input: Dict with own_state (7,), contacts (max_contacts, 5), context (2,)
+    Output: Box with shape (obs_dim,) where obs_dim depends on max_contacts
+
+    Observation layout:
+        own_state: [x_norm, y_norm, sin_h, cos_h, vx_norm, vy_norm, hp_ratio] = 7 dims
+        contacts:  [x_norm, y_norm, sin_h, cos_h, dist_norm, sin_b, cos_b] * max_contacts
+        context:   [step_ratio, remaining_ratio] = 2 dims
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        world_size: float = 500.0,
+        max_speed: float = 20.0,
+    ) -> None:
+        super().__init__(env)
+        self._world_size = world_size
+        self._max_speed = max_speed
+
+        # Get max_contacts from wrapped env
+        self._max_contacts = env.unwrapped.max_contacts
+        self._max_steps = env.unwrapped.max_steps
+
+        # Calculate observation dimension
+        # own_state: 7 dims (x, y, sin_h, cos_h, vx, vy, hp_ratio)
+        # contacts: 7 dims per contact (x, y, sin_h, cos_h, dist, sin_b, cos_b)
+        # context: 2 dims
+        own_dim = 7
+        contact_dim = 7 * self._max_contacts
+        context_dim = 2
+        total_dim = own_dim + contact_dim + context_dim
+
+        self.observation_space = spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(total_dim,),
+            dtype=np.float32,
+        )
+
+    def observation(self, obs: dict[str, np.ndarray]) -> np.ndarray:
+        """Convert dict observation to normalized flat array."""
+        own = obs["own_state"]
+        contacts = obs["contacts"]
+        context = obs["context"]
+
+        # Normalize own_state
+        own_normalized = np.array(
+            [
+                own[0] / self._world_size,  # x normalized
+                own[1] / self._world_size,  # y normalized
+                np.sin(own[2]),  # sin(heading)
+                np.cos(own[2]),  # cos(heading)
+                own[3] / self._max_speed,  # vx normalized
+                own[4] / self._max_speed,  # vy normalized
+                own[5] / max(own[6], 1.0),  # hp / max_hp
+            ],
+            dtype=np.float32,
+        )
+
+        # Normalize contacts
+        contacts_normalized = []
+        for i in range(self._max_contacts):
+            c = contacts[i]
+            contacts_normalized.extend(
+                [
+                    c[0] / self._world_size,  # x normalized
+                    c[1] / self._world_size,  # y normalized
+                    np.sin(c[2]),  # sin(heading)
+                    np.cos(c[2]),  # cos(heading)
+                    np.clip(c[3] / self._world_size, -1, 1),  # distance normalized
+                    np.sin(c[4]),  # sin(bearing)
+                    np.cos(c[4]),  # cos(bearing)
+                ]
+            )
+        contacts_flat = np.array(contacts_normalized, dtype=np.float32)
+
+        # Normalize context
+        context_normalized = np.array(
+            [
+                context[0] / self._max_steps,  # step ratio
+                context[1] / self._max_steps,  # remaining ratio
+            ],
+            dtype=np.float32,
+        )
+
+        return np.concatenate([own_normalized, contacts_flat, context_normalized])

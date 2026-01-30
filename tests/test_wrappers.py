@@ -34,6 +34,7 @@ def _import_wrappers_module():
 
 wrappers = _import_wrappers_module()
 FlatActionWrapper = wrappers.FlatActionWrapper
+NormalizedObsWrapper = wrappers.NormalizedObsWrapper
 
 
 class TestFlatActionWrapper:
@@ -128,6 +129,151 @@ class TestFlatActionWrapper:
         wrapped = FlatActionWrapper(env)
 
         assert wrapped.observation_space == env.observation_space
+
+
+class TestNormalizedObsWrapper:
+    """Tests for NormalizedObsWrapper."""
+
+    def test_observation_space_is_flat_box(self) -> None:
+        """Wrapped env has flat Box observation space."""
+        env = CombatEnv(max_contacts=16)
+        wrapped = NormalizedObsWrapper(env)
+
+        # own_state: 7 dims + contacts: 7 * 16 = 112 dims + context: 2 dims = 121
+        expected_dim = 7 + 7 * 16 + 2
+        assert wrapped.observation_space.shape == (expected_dim,)
+        assert wrapped.observation_space.low[0] == -1.0
+        assert wrapped.observation_space.high[0] == 1.0
+
+    def test_observation_space_with_different_max_contacts(self) -> None:
+        """Observation dimension scales with max_contacts."""
+        env = CombatEnv(max_contacts=8)
+        wrapped = NormalizedObsWrapper(env)
+
+        # own_state: 7 dims + contacts: 7 * 8 = 56 dims + context: 2 dims = 65
+        expected_dim = 7 + 7 * 8 + 2
+        assert wrapped.observation_space.shape == (expected_dim,)
+
+    def test_observation_normalization_positions(self) -> None:
+        """Position values are normalized by world_size."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env, world_size=500.0)
+
+        wrapped.reset(seed=42)
+        obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
+
+        # All values should be in [-1, 1] range
+        assert obs.shape == (7 + 7 * 4 + 2,)
+        assert np.all(obs >= -1.0)
+        assert np.all(obs <= 1.0)
+
+    def test_angle_encoding_sin_cos(self) -> None:
+        """Angles are encoded as sin/cos pairs."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env)
+
+        wrapped.reset(seed=42)
+        obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
+
+        # own_state indices 2,3 are sin_h, cos_h
+        sin_h = obs[2]
+        cos_h = obs[3]
+        # sin^2 + cos^2 should equal 1
+        np.testing.assert_almost_equal(sin_h**2 + cos_h**2, 1.0, decimal=5)
+
+    def test_hp_ratio_normalized(self) -> None:
+        """HP is normalized as hp/max_hp."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env)
+
+        wrapped.reset(seed=42)
+        obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
+
+        # HP ratio at index 6 should be in [0, 1]
+        hp_ratio = obs[6]
+        assert 0.0 <= hp_ratio <= 1.0
+
+    def test_context_normalized_by_max_steps(self) -> None:
+        """Context values are normalized by max_steps."""
+        env = CombatEnv(max_contacts=4, max_steps=100)
+        wrapped = NormalizedObsWrapper(env)
+
+        wrapped.reset(seed=42)
+        # Take a step
+        obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
+
+        # Context is at the end: last 2 values
+        step_ratio = obs[-2]  # step_count / max_steps
+        remaining_ratio = obs[-1]  # remaining / max_steps
+
+        # After 1 step with max_steps=100: step_ratio = 1/100 = 0.01, remaining = 99/100 = 0.99
+        np.testing.assert_almost_equal(step_ratio, 0.01, decimal=3)
+        np.testing.assert_almost_equal(remaining_ratio, 0.99, decimal=3)
+
+    def test_step_with_normalized_observation(self) -> None:
+        """Wrapped env returns normalized observations on step."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env)
+
+        wrapped.reset(seed=42)
+
+        action = {"throttle": np.array([0.5]), "turn_rate": np.array([0.2]), "fire": 0}
+        obs, reward, terminated, truncated, _ = wrapped.step(action)
+
+        assert isinstance(obs, np.ndarray)
+        assert obs.dtype == np.float32
+        assert isinstance(reward, float)
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+
+    def test_reset_returns_normalized_observation(self) -> None:
+        """Wrapped env returns normalized observation on reset."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env)
+
+        obs, _info = wrapped.reset(seed=42)
+
+        assert isinstance(obs, np.ndarray)
+        assert obs.dtype == np.float32
+        expected_dim = 7 + 7 * 4 + 2
+        assert obs.shape == (expected_dim,)
+
+    def test_composed_with_flat_action_wrapper(self) -> None:
+        """NormalizedObsWrapper composes with FlatActionWrapper for full SB3 compatibility."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(FlatActionWrapper(env))
+
+        wrapped.reset(seed=42)
+
+        # Use flat action (from FlatActionWrapper)
+        flat_action = np.array([0.5, 0.2, -0.5], dtype=np.float32)
+        obs, _, _, _, _ = wrapped.step(flat_action)
+
+        # Observation should be flat normalized array
+        assert isinstance(obs, np.ndarray)
+        expected_dim = 7 + 7 * 4 + 2
+        assert obs.shape == (expected_dim,)
+
+    def test_contacts_normalized_with_bearing(self) -> None:
+        """Contact bearing is encoded as sin/cos."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env)
+
+        wrapped.reset(seed=42)
+        obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
+
+        # Contact layout: [x, y, sin_h, cos_h, dist, sin_b, cos_b] per contact
+        # First contact starts at index 7 (after own_state)
+        contact_start = 7
+        for i in range(4):
+            idx = contact_start + i * 7
+            sin_h = obs[idx + 2]
+            cos_h = obs[idx + 3]
+            sin_b = obs[idx + 5]
+            cos_b = obs[idx + 6]
+            # sin^2 + cos^2 should equal 1 for valid angles
+            np.testing.assert_almost_equal(sin_h**2 + cos_h**2, 1.0, decimal=5)
+            np.testing.assert_almost_equal(sin_b**2 + cos_b**2, 1.0, decimal=5)
 
 
 if __name__ == "__main__":
