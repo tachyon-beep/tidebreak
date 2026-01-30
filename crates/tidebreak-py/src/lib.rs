@@ -39,7 +39,7 @@ use numpy::{PyArray1, ToPyArray};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use tidebreak_core::entity::components::{CombatState, PhysicsState, StatusFlags, TransformState};
-use tidebreak_core::entity::{EntityId, EntityTag};
+use tidebreak_core::entity::{Entity, EntityId, EntityInner, EntityTag};
 
 /// Field enum for Python.
 ///
@@ -493,7 +493,7 @@ impl From<PyEntityId> for EntityId {
 
 /// Entity type classification for Python.
 #[pyclass(eq, eq_int, hash, frozen)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyEntityTag {
     Ship,
     Platform,
@@ -664,6 +664,95 @@ impl PyCombatState {
     }
 }
 
+/// Read-only view of an entity.
+#[pyclass(frozen)]
+#[derive(Clone)]
+pub struct PyEntity {
+    id: PyEntityId,
+    tag: PyEntityTag,
+    transform: PyTransformState,
+    physics: Option<PyPhysicsState>,
+    combat: Option<PyCombatState>,
+}
+
+impl PyEntity {
+    pub fn from_entity(entity: &Entity) -> Self {
+        let (transform, physics, combat) = match entity.inner() {
+            EntityInner::Ship(c) => (
+                PyTransformState::from(&c.transform),
+                Some(PyPhysicsState::from(&c.physics)),
+                Some(PyCombatState::from(&c.combat)),
+            ),
+            EntityInner::Platform(c) => (PyTransformState::from(&c.transform), None, None),
+            EntityInner::Projectile(c) => (
+                PyTransformState::from(&c.transform),
+                Some(PyPhysicsState::from(&c.physics)),
+                None,
+            ),
+            EntityInner::Squadron(c) => (
+                PyTransformState::from(&c.transform),
+                Some(PyPhysicsState::from(&c.physics)),
+                Some(PyCombatState::from(&c.combat)),
+            ),
+        };
+
+        Self {
+            id: entity.id().into(),
+            tag: entity.tag().into(),
+            transform,
+            physics,
+            combat,
+        }
+    }
+}
+
+#[pymethods]
+impl PyEntity {
+    /// Entity ID.
+    #[getter]
+    fn id(&self) -> PyEntityId {
+        self.id
+    }
+
+    /// Entity tag (type).
+    #[getter]
+    fn tag(&self) -> PyEntityTag {
+        self.tag
+    }
+
+    /// Transform state (always present).
+    #[getter]
+    fn transform(&self) -> PyTransformState {
+        self.transform.clone()
+    }
+
+    /// Physics state (if entity has physics).
+    #[getter]
+    fn physics(&self) -> Option<PyPhysicsState> {
+        self.physics.clone()
+    }
+
+    /// Combat state (if entity has combat).
+    #[getter]
+    fn combat(&self) -> Option<PyCombatState> {
+        self.combat.clone()
+    }
+
+    /// Check if entity is a ship.
+    fn is_ship(&self) -> bool {
+        matches!(self.tag, PyEntityTag::Ship)
+    }
+
+    /// Check if entity is destroyed.
+    fn is_destroyed(&self) -> bool {
+        self.combat.as_ref().is_some_and(|c| c.is_destroyed)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Entity(id={}, tag={:?})", self.id.value(), self.tag)
+    }
+}
+
 /// Convert string to Field enum.
 fn str_to_field(s: &str) -> murk::Field {
     match s.to_lowercase().as_str() {
@@ -695,5 +784,6 @@ fn _tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTransformState>()?;
     m.add_class::<PyPhysicsState>()?;
     m.add_class::<PyCombatState>()?;
+    m.add_class::<PyEntity>()?;
     Ok(())
 }
