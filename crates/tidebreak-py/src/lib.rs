@@ -38,6 +38,7 @@
 use numpy::{PyArray1, ToPyArray};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use tidebreak_core::entity::{EntityId, EntityTag};
 
 /// Field enum for Python.
 ///
@@ -459,6 +460,68 @@ impl PyQueryResult {
     }
 }
 
+/// Unique entity identifier exposed to Python.
+#[pyclass(frozen, eq, hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PyEntityId(EntityId);
+
+#[pymethods]
+impl PyEntityId {
+    /// Get the raw u64 value.
+    #[getter]
+    fn value(&self) -> u64 {
+        self.0.as_u64()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("EntityId({})", self.0.as_u64())
+    }
+}
+
+impl From<EntityId> for PyEntityId {
+    fn from(id: EntityId) -> Self {
+        Self(id)
+    }
+}
+
+impl From<PyEntityId> for EntityId {
+    fn from(id: PyEntityId) -> Self {
+        id.0
+    }
+}
+
+/// Entity type classification for Python.
+#[pyclass(eq, eq_int, hash, frozen)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PyEntityTag {
+    Ship,
+    Platform,
+    Projectile,
+    Squadron,
+}
+
+impl From<EntityTag> for PyEntityTag {
+    fn from(tag: EntityTag) -> Self {
+        match tag {
+            EntityTag::Ship => PyEntityTag::Ship,
+            EntityTag::Platform => PyEntityTag::Platform,
+            EntityTag::Projectile => PyEntityTag::Projectile,
+            EntityTag::Squadron => PyEntityTag::Squadron,
+        }
+    }
+}
+
+impl From<PyEntityTag> for EntityTag {
+    fn from(tag: PyEntityTag) -> Self {
+        match tag {
+            PyEntityTag::Ship => EntityTag::Ship,
+            PyEntityTag::Platform => EntityTag::Platform,
+            PyEntityTag::Projectile => EntityTag::Projectile,
+            PyEntityTag::Squadron => EntityTag::Squadron,
+        }
+    }
+}
+
 /// Convert string to Field enum.
 fn str_to_field(s: &str) -> murk::Field {
     match s.to_lowercase().as_str() {
@@ -485,5 +548,7 @@ fn _tidebreak(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPointResult>()?;
     m.add_class::<PyQueryResult>()?;
     m.add_class::<Field>()?;
+    m.add_class::<PyEntityId>()?;
+    m.add_class::<PyEntityTag>()?;
     Ok(())
 }
