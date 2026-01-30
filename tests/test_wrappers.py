@@ -2,39 +2,10 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from tidebreak.envs import CombatEnv
-
-
-def _import_wrappers_module():
-    """Import wrappers module from maturin location.
-
-    This helper exists because the wrappers module is in the maturin-built
-    package location, and the __init__.py exports haven't been updated yet.
-    Once Task 3 is complete, this can be replaced with:
-        from tidebreak.envs.wrappers import FlatActionWrapper
-    """
-    wrappers_file = (
-        Path(__file__).parent.parent / "crates" / "tidebreak-py" / "python" / "tidebreak" / "envs" / "wrappers.py"
-    )
-    if "tidebreak.envs.wrappers" not in sys.modules:
-        spec = importlib.util.spec_from_file_location("tidebreak.envs.wrappers", wrappers_file)
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            sys.modules["tidebreak.envs.wrappers"] = module
-            spec.loader.exec_module(module)
-    return sys.modules["tidebreak.envs.wrappers"]
-
-
-wrappers = _import_wrappers_module()
-FlatActionWrapper = wrappers.FlatActionWrapper
-NormalizedObsWrapper = wrappers.NormalizedObsWrapper
+from tidebreak.envs import CombatEnv, FlatActionWrapper, NormalizedObsWrapper
 
 
 class TestFlatActionWrapper:

@@ -134,3 +134,34 @@ class NormalizedObsWrapper(gym.ObservationWrapper):
         )
 
         return np.concatenate([own_normalized, contacts_flat, context_normalized])
+
+
+def make_sb3_env(
+    max_contacts: int = 16,
+    max_steps: int = 1000,
+    world_size: float = 500.0,
+    max_speed: float = 20.0,
+    **kwargs,
+) -> gym.Env:
+    """Create a CombatEnv wrapped for SB3 compatibility.
+
+    Returns an environment with:
+    - Flat Box action space: (3,) for [throttle, turn_rate, fire_logit]
+    - Flat Box observation space: normalized to [-1, 1]
+
+    Args:
+        max_contacts: Maximum tracked contacts
+        max_steps: Episode length
+        world_size: World size for position normalization
+        max_speed: Max entity speed for velocity normalization
+        **kwargs: Additional CombatEnv parameters
+
+    Returns:
+        Wrapped Gymnasium environment ready for SB3 training
+    """
+    from tidebreak.envs import CombatEnv
+
+    env = CombatEnv(max_contacts=max_contacts, max_steps=max_steps, **kwargs)
+    env = FlatActionWrapper(env)
+    env = NormalizedObsWrapper(env, world_size=world_size, max_speed=max_speed)
+    return env
