@@ -30,9 +30,11 @@
 // Re-export murk for spatial queries
 pub use murk;
 
+// Core modules
+pub mod entity;
+
 // Placeholder modules - to be implemented
 // pub mod arena;
-// pub mod entity;
 // pub mod plugin;
 // pub mod resolver;
 // pub mod contracts;
