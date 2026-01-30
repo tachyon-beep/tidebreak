@@ -6,11 +6,33 @@ on the Tidebreak combat simulation.
 
 from __future__ import annotations
 
-__all__ = ["MurkEnv"]
+__all__ = ["CombatEnv", "MurkEnv"]
 
 
 def __getattr__(name: str) -> type:
-    """Lazy load MurkEnv to avoid circular imports."""
+    """Lazy load environments to avoid circular imports."""
+    if name == "CombatEnv":
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        _this_file = Path(__file__).resolve()
+
+        # Find the maturin-installed tidebreak package
+        for site_path in sys.path:
+            ext_path = Path(site_path) / "tidebreak" / "envs"
+            if ext_path.exists() and ext_path.resolve() != _this_file.parent:
+                combat_env_file = ext_path / "combat_env.py"
+                if combat_env_file.exists():
+                    spec = importlib.util.spec_from_file_location("tidebreak.envs.combat_env", combat_env_file)
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        sys.modules["tidebreak.envs.combat_env"] = module
+                        spec.loader.exec_module(module)
+                        combat_env_cls: type = module.CombatEnv
+                        return combat_env_cls
+        raise ImportError("CombatEnv not found. Make sure tidebreak is built with: maturin develop")
+
     if name == "MurkEnv":
         import importlib.util
         import sys
