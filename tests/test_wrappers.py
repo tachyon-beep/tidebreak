@@ -139,8 +139,8 @@ class TestNormalizedObsWrapper:
         env = CombatEnv(max_contacts=16)
         wrapped = NormalizedObsWrapper(env)
 
-        # own_state: 7 dims + contacts: 7 * 16 = 112 dims + context: 2 dims = 121
-        expected_dim = 7 + 7 * 16 + 2
+        # own_state: 7 dims + contacts: 6 * 16 = 96 dims + context: 2 dims = 105
+        expected_dim = 7 + 6 * 16 + 2
         assert wrapped.observation_space.shape == (expected_dim,)
         assert wrapped.observation_space.low[0] == -1.0
         assert wrapped.observation_space.high[0] == 1.0
@@ -150,8 +150,8 @@ class TestNormalizedObsWrapper:
         env = CombatEnv(max_contacts=8)
         wrapped = NormalizedObsWrapper(env)
 
-        # own_state: 7 dims + contacts: 7 * 8 = 56 dims + context: 2 dims = 65
-        expected_dim = 7 + 7 * 8 + 2
+        # own_state: 7 dims + contacts: 6 * 8 = 48 dims + context: 2 dims = 57
+        expected_dim = 7 + 6 * 8 + 2
         assert wrapped.observation_space.shape == (expected_dim,)
 
     def test_observation_normalization_positions(self) -> None:
@@ -163,7 +163,7 @@ class TestNormalizedObsWrapper:
         obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
 
         # All values should be in [-1, 1] range
-        assert obs.shape == (7 + 7 * 4 + 2,)
+        assert obs.shape == (7 + 6 * 4 + 2,)
         assert np.all(obs >= -1.0)
         assert np.all(obs <= 1.0)
 
@@ -235,7 +235,7 @@ class TestNormalizedObsWrapper:
 
         assert isinstance(obs, np.ndarray)
         assert obs.dtype == np.float32
-        expected_dim = 7 + 7 * 4 + 2
+        expected_dim = 7 + 6 * 4 + 2
         assert obs.shape == (expected_dim,)
 
     def test_composed_with_flat_action_wrapper(self) -> None:
@@ -251,7 +251,7 @@ class TestNormalizedObsWrapper:
 
         # Observation should be flat normalized array
         assert isinstance(obs, np.ndarray)
-        expected_dim = 7 + 7 * 4 + 2
+        expected_dim = 7 + 6 * 4 + 2
         assert obs.shape == (expected_dim,)
 
     def test_contacts_normalized_with_bearing(self) -> None:
@@ -262,18 +262,32 @@ class TestNormalizedObsWrapper:
         wrapped.reset(seed=42)
         obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
 
-        # Contact layout: [x, y, sin_h, cos_h, dist, sin_b, cos_b] per contact
+        # Contact layout: [x, y, sin_b, cos_b, dist, quality] per contact (6 dims)
         # First contact starts at index 7 (after own_state)
         contact_start = 7
         for i in range(4):
-            idx = contact_start + i * 7
-            sin_h = obs[idx + 2]
-            cos_h = obs[idx + 3]
-            sin_b = obs[idx + 5]
-            cos_b = obs[idx + 6]
+            idx = contact_start + i * 6
+            sin_b = obs[idx + 2]
+            cos_b = obs[idx + 3]
             # sin^2 + cos^2 should equal 1 for valid angles
-            np.testing.assert_almost_equal(sin_h**2 + cos_h**2, 1.0, decimal=5)
             np.testing.assert_almost_equal(sin_b**2 + cos_b**2, 1.0, decimal=5)
+
+    def test_contact_quality_normalized_to_unit_range(self) -> None:
+        """Contact quality is normalized to [0, 1] range, not treated as angle."""
+        env = CombatEnv(max_contacts=4)
+        wrapped = NormalizedObsWrapper(env)
+
+        wrapped.reset(seed=42)
+        obs, _, _, _, _ = wrapped.step({"throttle": np.array([0.0]), "turn_rate": np.array([0.0]), "fire": 0})
+
+        # Contact layout: [x, y, sin_b, cos_b, dist, quality] per contact (6 dims)
+        # Quality is the last element of each contact block
+        contact_start = 7
+        for i in range(4):
+            idx = contact_start + i * 6
+            quality_norm = obs[idx + 5]
+            # Quality should be in [0, 1] range (from 0-100 raw)
+            assert 0.0 <= quality_norm <= 1.0, f"Quality {quality_norm} not in [0, 1]"
 
 
 if __name__ == "__main__":

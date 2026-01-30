@@ -50,8 +50,11 @@ class NormalizedObsWrapper(gym.ObservationWrapper):
 
     Observation layout:
         own_state: [x_norm, y_norm, sin_h, cos_h, vx_norm, vy_norm, hp_ratio] = 7 dims
-        contacts:  [x_norm, y_norm, sin_h, cos_h, dist_norm, sin_b, cos_b] * max_contacts
+        contacts:  [x_norm, y_norm, sin_b, cos_b, dist_norm, quality_norm] * max_contacts = 6 dims each
         context:   [step_ratio, remaining_ratio] = 2 dims
+
+    Contact fields from Rust (per contact, 5 values):
+        [x, y, rel_heading (bearing TO contact), distance, quality (0-100)]
     """
 
     def __init__(
@@ -70,10 +73,10 @@ class NormalizedObsWrapper(gym.ObservationWrapper):
 
         # Calculate observation dimension
         # own_state: 7 dims (x, y, sin_h, cos_h, vx, vy, hp_ratio)
-        # contacts: 7 dims per contact (x, y, sin_h, cos_h, dist, sin_b, cos_b)
+        # contacts: 6 dims per contact (x, y, sin_b, cos_b, dist, quality)
         # context: 2 dims
         own_dim = 7
-        contact_dim = 7 * self._max_contacts
+        contact_dim = 6 * self._max_contacts
         context_dim = 2
         total_dim = own_dim + contact_dim + context_dim
 
@@ -99,12 +102,13 @@ class NormalizedObsWrapper(gym.ObservationWrapper):
                 np.cos(own[2]),  # cos(heading)
                 own[3] / self._max_speed,  # vx normalized
                 own[4] / self._max_speed,  # vy normalized
-                own[5] / max(own[6], 1.0),  # hp / max_hp
+                own[5] / own[6],  # hp / max_hp
             ],
             dtype=np.float32,
         )
 
         # Normalize contacts
+        # Rust contact layout: [x, y, rel_heading (bearing TO contact), distance, quality]
         contacts_normalized = []
         for i in range(self._max_contacts):
             c = contacts[i]
@@ -112,11 +116,10 @@ class NormalizedObsWrapper(gym.ObservationWrapper):
                 [
                     c[0] / self._world_size,  # x normalized
                     c[1] / self._world_size,  # y normalized
-                    np.sin(c[2]),  # sin(heading)
-                    np.cos(c[2]),  # cos(heading)
+                    np.sin(c[2]),  # sin(bearing to contact)
+                    np.cos(c[2]),  # cos(bearing to contact)
                     np.clip(c[3] / self._world_size, -1, 1),  # distance normalized
-                    np.sin(c[4]),  # sin(bearing)
-                    np.cos(c[4]),  # cos(bearing)
+                    c[4] / 100.0,  # quality normalized (0-1)
                 ]
             )
         contacts_flat = np.array(contacts_normalized, dtype=np.float32)
